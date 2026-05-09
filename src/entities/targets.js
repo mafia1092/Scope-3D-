@@ -220,7 +220,9 @@ export function spawnTargets(){
   targets.length = 0;
 
   const usedRooftopBldgs = new Set();
-  const rooftopBldgs = buildingPositions.filter(b => b.h > 30 && b.h < 90);
+  // Kenney buildings stack walls of ~4 units × 2-5 floors → heights 8-20.
+  // Old procedural buildings were 30-80; keep both alive for safety.
+  const rooftopBldgs = buildingPositions.filter(b => b.h >= 6);
 
   function placeOnRooftop(look, bonus = {}){
     let b, tries = 0;
