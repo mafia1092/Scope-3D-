@@ -41,10 +41,10 @@ canvas.addEventListener('webglcontextrestored', () => {
 });
 
 // ─── Scene + fog ───
-// Cool desaturated grey-blue haze; starts closer & fades out earlier so the
-// painterly fog reads thicker.
+// Lighter cool haze; starts farther so close-range gameplay isn't murky.
+// (Earlier 30→fogFar*0.85 was too aggressive — buildings vanished.)
 export const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x2a2e34, 30, TIER.fogFar * 0.85);
+scene.fog = new THREE.Fog(0x4a525a, 120, TIER.fogFar * 1.4);
 
 // ─── Camera ───
 export const camera = new THREE.PerspectiveCamera(FOV_NORMAL, 1, 0.5, 2000);
