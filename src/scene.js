@@ -41,10 +41,9 @@ canvas.addEventListener('webglcontextrestored', () => {
 });
 
 // ─── Scene + fog ───
-// Lighter cool haze; starts farther so close-range gameplay isn't murky.
-// (Earlier 30→fogFar*0.85 was too aggressive — buildings vanished.)
+// Fog disabled per user request — open visibility, no painterly haze.
 export const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x4a525a, 120, TIER.fogFar * 1.4);
+scene.fog = null;
 
 // ─── Camera ───
 export const camera = new THREE.PerspectiveCamera(FOV_NORMAL, 1, 0.5, 2000);
