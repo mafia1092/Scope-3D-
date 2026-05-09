@@ -12,92 +12,171 @@ import { buildingPositions, cityGroup } from '../world/city.js';
 export const targets = []; // {mesh, type, alive, hp, hitBox, bounty, headBox, ...}
 export const hitables = { cache: null, dirty: true };
 
+// ─── Noir palette (fallbacks if look colors aren't supplied) ───
+// Dark olive, dusty olive, charcoal, rust — and matching darker hood variants.
+const NOIR_PALETTE = {
+  cloth: [0x2c3a2c, 0x3a352c, 0x2a2a2c, 0x3a2a25],
+  hood:  [0x1c2820, 0x2a2620, 0x1a1a1c, 0x2a1c14],
+  boots: 0x14110e,
+  rifle: 0x1a1c1f,
+  scope: 0x0a0a0d,
+  hands: 0x14100c,
+};
+
 // ─── Factories ───
+// Hooded-coat sniper silhouette. Keeps the original parameter signature so
+// CONTRACTS / TARGET_TYPES configs (cloth/helmet colors, isVip, hasRifle)
+// keep working. Adds an optional `look.variant` (1-4) for subtle silhouette
+// differences. Civilians (helmetColor === null) get a less imposing pose
+// and no rifle. Total height ≈ 3 units, base at y = 0 (matches the old
+// humanoid so existing CONTRACTS placements don't need to change).
 export function makeHumanoid(skinColor, clothColor, helmetColor, look = {}){
   const g = new THREE.Group();
-  // body
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1.2, 2, 0.6),
-    new THREE.MeshLambertMaterial({ color: clothColor })
-  );
-  body.position.y = 1;
-  g.add(body);
+  const variant = (look.variant >= 1 && look.variant <= 4) ? look.variant : 1;
+  const isCivilian = (helmetColor === null);
+  // Variant 2 swaps the hood for the optional helmet (or bare head).
+  const hasHood = (variant !== 2) && !(isCivilian && variant !== 3);
+  // Variant 3 = shorter, more military coat.
+  const coatBottomY = (variant === 3) ? 0.8 : 0.55;
 
-  // VIP touch: tie / sash detail
-  if (look.isVip) {
-    const tie = new THREE.Mesh(
-      new THREE.BoxGeometry(0.2, 1.2, 0.05),
-      new THREE.MeshLambertMaterial({ color: 0xa83c2a })
+  // Resolve palette: if cloth color was provided, derive a dimmer hood
+  // tint from it; otherwise pick from NOIR_PALETTE by variant index.
+  const palIdx = (variant - 1) % NOIR_PALETTE.cloth.length;
+  const coatHex = (clothColor != null) ? clothColor : NOIR_PALETTE.cloth[palIdx];
+  const hoodHex = (clothColor != null)
+    ? new THREE.Color(clothColor).multiplyScalar(0.55).getHex()
+    : NOIR_PALETTE.hood[palIdx];
+
+  // Shared materials (one per color) keep mesh count low without
+  // extra bookkeeping — Three's renderer batches by material.
+  const coatMat  = new THREE.MeshLambertMaterial({ color: coatHex });
+  const hoodMat  = new THREE.MeshLambertMaterial({ color: hoodHex });
+  const skinMat  = new THREE.MeshLambertMaterial({ color: skinColor });
+  const bootMat  = new THREE.MeshLambertMaterial({ color: NOIR_PALETTE.boots });
+  const rifleMat = new THREE.MeshLambertMaterial({ color: NOIR_PALETTE.rifle });
+
+  // ─── Boots (one mesh, sits on the ground) ───
+  const boots = new THREE.Mesh(
+    new THREE.BoxGeometry(0.85, 0.25, 0.55),
+    bootMat
+  );
+  boots.position.y = 0.125;
+  g.add(boots);
+
+  // ─── Coat (long tapered cone, neck → mid-shin) ───
+  // Cone radii: bottom slightly wider for drape, top narrow at the neck.
+  // Y range: coatBottomY (legs poke out below) → ~1.85 (neck).
+  const coatHeight = 1.85 - coatBottomY;
+  const coatTopR = 0.45;
+  const coatBotR = (variant === 3) ? 0.55 : 0.7;
+  const coat = new THREE.Mesh(
+    new THREE.CylinderGeometry(coatTopR, coatBotR, coatHeight, 8, 1, false),
+    coatMat
+  );
+  coat.position.y = coatBottomY + coatHeight / 2;
+  g.add(coat);
+
+  // ─── Optional vest (variant 4) — bulky torso piece over the coat ───
+  if (variant === 4) {
+    const vest = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6, 0.62, 0.85, 8),
+      hoodMat // darker variant for contrast
     );
-    tie.position.set(0, 1.2, 0.32);
-    g.add(tie);
+    vest.position.y = 1.35;
+    g.add(vest);
   }
 
-  // head
+  // ─── Head (kept as a sphere; userData.headRef points here) ───
   const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.45, TIER.headSeg, TIER.headSeg),
-    new THREE.MeshLambertMaterial({ color: skinColor })
+    new THREE.SphereGeometry(0.32, TIER.headSeg, TIER.headSeg),
+    skinMat
   );
-  head.position.y = 2.4;
+  head.position.y = 2.25;
   head.name = 'head';
   g.add(head);
 
-  // helmet (optional — civilians have none)
-  if (helmetColor !== null) {
+  // ─── Hood OR helmet (mutually exclusive on the head) ───
+  if (hasHood) {
+    // Partial-sphere dome wrapping the top/back of the head.
+    // phiStart/Length cuts open the front so the face is a pocket of shadow.
+    const hoodDome = new THREE.Mesh(
+      new THREE.SphereGeometry(
+        0.42, TIER.headSeg, TIER.headSeg,
+        Math.PI * 0.25, Math.PI * 1.5,        // open front wedge
+        0, Math.PI * 0.65                      // truncate the bottom
+      ),
+      hoodMat
+    );
+    hoodDome.position.y = 2.28;
+    g.add(hoodDome);
+
+    // Drape that extends from the hood down past the shoulders.
+    const drape = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.5, 0.55, 8, 1, true),
+      hoodMat
+    );
+    drape.position.y = 1.95;
+    g.add(drape);
+  } else if (helmetColor !== null) {
+    // Variant 2 (or non-hood) gets a helmet if one was specified.
     const helmet = new THREE.Mesh(
-      new THREE.SphereGeometry(0.5, TIER.headSeg, TIER.headSeg, 0, Math.PI*2, 0, Math.PI/2.2),
+      new THREE.SphereGeometry(
+        0.38, TIER.headSeg, TIER.headSeg,
+        0, Math.PI * 2, 0, Math.PI / 2.2
+      ),
       new THREE.MeshLambertMaterial({ color: helmetColor })
     );
-    helmet.position.y = 2.55;
+    helmet.position.y = 2.32;
     g.add(helmet);
-  } else {
-    // hair tuft for civilians
-    const hair = new THREE.Mesh(
-      new THREE.SphereGeometry(0.42, 8, 8),
-      new THREE.MeshLambertMaterial({ color: 0x2a1a14 })
+  }
+  // If no hood and no helmet, the bare head + skinColor remains visible.
+
+  // ─── Rifle (skipped for civilians and unarmed VIPs) ───
+  // VIPs with hasRifle still get one (e.g. THE GHOST).
+  const wantRifle = !isCivilian && (look.hasRifle || !look.isVip);
+  if (wantRifle) {
+    const rifleG = new THREE.Group();
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 1.2, 6),
+      rifleMat
     );
-    hair.position.y = 2.55;
-    hair.scale.set(1.05, 0.6, 1.05);
-    g.add(hair);
+    barrel.rotation.z = Math.PI / 2; // lay along x
+    rifleG.add(barrel);
+
+    const stock = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, 0.18, 0.12),
+      rifleMat
+    );
+    stock.position.x = -0.6;
+    rifleG.add(stock);
+
+    const scope = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 0.14, 0.14),
+      new THREE.MeshLambertMaterial({ color: NOIR_PALETTE.scope })
+    );
+    scope.position.set(0, 0.16, 0);
+    rifleG.add(scope);
+
+    // Held diagonally across the chest, leaning low-right to high-left so
+    // it stays well below the head — keeps headshot sightlines clean from
+    // typical rooftop sniping angles.
+    rifleG.position.set(0, 1.45, 0.32);
+    rifleG.rotation.set(0, 0.55, -0.5);
+    g.add(rifleG);
+
+    // ─── Glove "hands" where the rifle meets the body ───
+    const handMat = new THREE.MeshLambertMaterial({ color: NOIR_PALETTE.hands });
+    const hand1 = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 6), handMat);
+    hand1.position.set(0.18, 1.45, 0.4);
+    g.add(hand1);
+    const hand2 = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 6), handMat);
+    hand2.position.set(-0.32, 1.45, 0.3);
+    g.add(hand2);
   }
 
-  // legs
-  const legs = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 0.5, 0.6),
-    new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
-  );
-  legs.position.y = 0.25;
-  g.add(legs);
-
-  // weapon
-  if (look.hasRifle) {
-    // long sniper rifle
-    const r = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 0.18, 2.2),
-      new THREE.MeshLambertMaterial({ color: 0x0a0a0a })
-    );
-    r.position.set(0.6, 1.3, 0.3);
-    g.add(r);
-    const sc = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8),
-      new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
-    );
-    sc.rotation.x = Math.PI / 2;
-    sc.position.set(0.6, 1.4, 0.3);
-    g.add(sc);
-  } else if (!look.isVip) {
-    // standard rifle
-    const weapon = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 0.18, 1.4),
-      new THREE.MeshLambertMaterial({ color: 0x0a0a0a })
-    );
-    weapon.position.set(0.6, 1.2, 0.4);
-    g.add(weapon);
-  }
-  // VIPs are unarmed (more obvious as targets)
-
+  // bodyRef = the coat (used by hit detection / death animation as the torso).
   g.userData.headRef = head;
-  g.userData.bodyRef = body;
+  g.userData.bodyRef = coat;
   return g;
 }
 

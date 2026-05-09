@@ -21,12 +21,24 @@ window.addEventListener('error', e => {
 
 import './scene.js';                                  // renderer, scene, camera, lights, sky, sun, post-processing
 import './entities/rifle.js';                         // rifle attached to camera (side-effect)
-import { buildCity, buildGround } from './world/city.js';
+import { preloadKit, buildCity, buildGround } from './world/city.js';
 import { buildAllNests, setNest, setOnNestChange } from './world/nests.js';
 import { spawnTargets } from './entities/targets.js';
 import * as hud from './ui/hud.js';
 import * as input from './input.js';
 import * as loop from './loop.js';
+import { initLeaderboard } from './leaderboard.js';
+
+// ─── Preload the Kenney GLB kit ───
+// Top-level await is fine — main.js is an ES module via importmap. Until this
+// resolves the loading screen stays visible; the progress bar updates per asset.
+const fillEl = document.getElementById('loadingFill');
+const statusEl = document.getElementById('loadingStatus');
+
+await preloadKit((done, total, name) => {
+  if (fillEl) fillEl.style.width = `${(done/total)*100}%`;
+  if (statusEl) statusEl.textContent = `Loading ${name}... (${done}/${total})`;
+});
 
 // ─── Build the world ───
 buildAllNests();
@@ -38,6 +50,7 @@ spawnTargets();
 hud.buildCompass();
 hud.bindMinimapInput();
 hud.bindCineSkip();
+initLeaderboard();
 // Keep minimap in sync immediately after a nest teleport
 setOnNestChange(hud.updateMinimap);
 

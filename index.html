@@ -359,6 +359,29 @@
     66%{content:'..';}
     100%{content:'...';}
   }
+  .loading-progress{
+    width:240px;
+    height:6px;
+    margin:18px auto 8px;
+    background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:3px;
+    overflow:hidden;
+  }
+  .loading-progress-fill{
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg, var(--gold, #d4a056), var(--rust, #c87146));
+    transition:width 0.15s ease-out;
+  }
+  .loading-status{
+    font-size:11px;
+    letter-spacing:0.16em;
+    text-transform:uppercase;
+    opacity:0.55;
+    margin-top:6px;
+    font-family:'Share Tech Mono', monospace;
+  }
 
   .overlay{
     position:fixed;inset:0;
@@ -662,6 +685,86 @@
     text-shadow:0 1px 3px rgba(0,0,0,0.95);
     letter-spacing:0.08em;
   }
+
+  /* ─── Leaderboard ─── */
+  .lb-btn {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 14px);
+    left: 14px;
+    width: 44px;
+    height: 44px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(20, 20, 24, 0.55);
+    color: var(--gold, #d4a056);
+    font-size: 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    z-index: 30;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    pointer-events: auto;
+    transition: transform 0.1s ease;
+  }
+  .lb-btn:active { transform: scale(0.94); }
+  .lb-modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    pointer-events: auto;
+  }
+  .lb-modal.open { display: flex; }
+  .lb-modal-inner {
+    background: #14181e;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 22px 24px;
+    width: min(92vw, 480px);
+    font-family: 'Share Tech Mono', monospace;
+    color: #d8d2c4;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.8);
+  }
+  .lb-modal-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 14px;
+  }
+  .lb-title {
+    font-family: 'Anton', sans-serif;
+    font-size: 22px;
+    letter-spacing: 0.18em;
+    color: var(--gold, #d4a056);
+  }
+  .lb-close {
+    background: none; border: none; color: #888;
+    font-size: 26px; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .lb-close:hover { color: #fff; }
+  .lb-list { min-height: 240px; }
+  .lb-row {
+    display: grid;
+    grid-template-columns: 36px 1fr auto auto;
+    gap: 12px;
+    padding: 8px 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    align-items: center;
+    font-size: 13px;
+  }
+  .lb-rank { color: var(--gold, #d4a056); font-weight: bold; }
+  .lb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-score { color: #d4a056; font-variant-numeric: tabular-nums; }
+  .lb-extra { font-size: 10px; color: #888; }
+  .lb-loading, .lb-empty { padding: 30px 0; text-align: center; color: #888; font-size: 12px; }
+  .lb-actions { margin-top: 14px; text-align: center; }
+  .lb-submit {
+    background: var(--gold, #d4a056); color: #14181e;
+    border: none; padding: 10px 22px; font-family: inherit;
+    letter-spacing: 0.16em; cursor: pointer; border-radius: 4px;
+  }
+  .lb-submit:hover { filter: brightness(1.1); }
+  .lb-status { font-size: 11px; opacity: 0.7; min-height: 16px; margin-bottom: 6px; }
+  .lb-status.error { color: #c87146; }
 </style>
 </head>
 <body>
@@ -669,6 +772,10 @@
 <div class="loading" id="loading">
   <h1>SCOPE · 3D</h1>
   <div class="sub" style="font-family:'Special Elite',serif;letter-spacing:0.15em;font-size:11px;opacity:0.7;">BUILDING THE CITY<span class="dots"></span></div>
+  <div class="loading-progress">
+    <div class="loading-progress-fill" id="loadingFill"></div>
+  </div>
+  <p class="loading-status" id="loadingStatus">Initializing...</p>
 </div>
 
 <div class="hud">

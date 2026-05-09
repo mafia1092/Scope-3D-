@@ -56,3 +56,34 @@ src/
 └── ui/
     └── hud.js            ← HUD, compass, labels, minimap, fire/reload, dossier, cinematic
 ```
+
+## Leaderboards setup (optional)
+
+Online leaderboards run on a free Supabase project. Setup once:
+
+1. Sign up at <https://supabase.com> (use GitHub login).
+2. **New Project** → pick any region, set a database password (you can ignore it after).
+3. After it provisions (~1 min), open **SQL Editor → New Query** and run:
+
+```sql
+create table scores (
+  id bigserial primary key,
+  nickname text not null,
+  score int not null,
+  kills int not null,
+  headshots int not null,
+  contract text,
+  created_at timestamptz default now()
+);
+alter table scores enable row level security;
+create policy "anyone read scores" on scores for select using (true);
+create policy "anyone insert scores" on scores for insert with check (
+  length(nickname) between 1 and 24
+  and score >= 0 and score < 1000000
+);
+create index scores_score_idx on scores (score desc);
+```
+
+4. **Settings → API** → copy your **Project URL** and **anon public** key.
+5. Open `src/leaderboard.js`. Replace the `PASTE_YOUR_SUPABASE_URL` and `PASTE_YOUR_SUPABASE_ANON_KEY` constants near the top with your values.
+6. Save and reload the game. The 🏆 button (top-left) opens the leaderboard.
