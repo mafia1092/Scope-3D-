@@ -1,0 +1,3 @@
+# Heavy binary assets — kept locally, not committed
+assets/sky.hdr
+*.hdr
