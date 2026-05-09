@@ -7,9 +7,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { state } from './state.js';
 
-// ─── Config: paste your Supabase project URL + anon key here ───
-const SUPABASE_URL = 'PASTE_YOUR_SUPABASE_URL';
-const SUPABASE_KEY = 'PASTE_YOUR_SUPABASE_ANON_KEY';
+// ─── Config: Supabase project URL + anon key (anon key is safe to publish;
+// security comes from RLS policies on the scores table). ───
+const SUPABASE_URL = 'https://scrcqmfwvvdqxdzvwusr.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNjcmNxbWZ3dnZkcXhkenZ3dXNyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzNTY2ODgsImV4cCI6MjA5MzkzMjY4OH0.zp7kztK2tNAU7Yak7TqrvgedS7_QzTHWJRIP3OfbuNQ';
 const TABLE = 'scores';
 
 // Detect unconfigured state so the module degrades gracefully
