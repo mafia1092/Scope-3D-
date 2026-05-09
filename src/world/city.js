@@ -3,10 +3,9 @@
 // (one MeshLambertMaterial + canvas texture per color, reused across faces).
 // Exports buildingPositions for target placement / minimap rendering.
 
+import * as THREE from 'three';
 import { scene } from '../scene.js';
 import { NESTS, rand } from '../state.js';
-
-const THREE = window.THREE;
 
 export const cityGroup = new THREE.Group();
 scene.add(cityGroup);
@@ -138,7 +137,8 @@ export function buildCity(){
 // ─── Ground plane + street grid ───
 export function buildGround(){
   const groundGeo = new THREE.PlaneGeometry(2000, 2000);
-  const groundMat = new THREE.MeshLambertMaterial({ color: 0x2a2418 });
+  // Very dark, almost black — lets the dusk fog and silhouettes pop.
+  const groundMat = new THREE.MeshLambertMaterial({ color: 0x1a1d20 });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = 0;

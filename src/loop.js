@@ -2,7 +2,7 @@
 // Pulls input → updates camera/breath/reload/targets/particles → renders.
 // HUD pieces (compass, labels, minimap) are throttled per device tier.
 
-import { renderer, scene, camera } from './scene.js';
+import { renderer, scene, camera, composer, noirPass } from './scene.js';
 import { TIER, DEVICE_TIER } from './tier.js';
 import { state, cine } from './state.js';
 import { lookInput, aimInput, readKeyboardInput } from './input.js';
@@ -87,7 +87,9 @@ function tick(){
   if (_frame % TIER.throttleLabels === 0) updateTargetLabels();
   if (_frame % TIER.throttleMini === 0) updateMinimap();
 
-  renderer.render(scene, camera);
+  // Drive the noir grain shader; render through the composer (post-processing).
+  noirPass.uniforms.time.value = now * 0.001;
+  composer.render();
   if (running) requestAnimationFrame(tick);
 }
 

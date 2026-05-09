@@ -2,12 +2,11 @@
 // Owns the live `targets` array, the `hitablesCache` (rebuilt lazily from the
 // city + alive targets), and the per-frame target movement / death animation.
 
+import * as THREE from 'three';
 import { scene } from '../scene.js';
 import { TIER } from '../tier.js';
 import { CONTRACTS, TARGET_TYPES, rand } from '../state.js';
 import { buildingPositions, cityGroup } from '../world/city.js';
-
-const THREE = window.THREE;
 
 // ─── Target list & hitables cache ───
 export const targets = []; // {mesh, type, alive, hp, hitBox, bounty, headBox, ...}

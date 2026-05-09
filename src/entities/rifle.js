@@ -3,9 +3,8 @@
 // (target/current pose, recoil offset) lives here as mutable named exports
 // so input/hud (toggleScope) and the main loop can mutate them.
 
+import * as THREE from 'three';
 import { camera } from '../scene.js';
-
-const THREE = window.THREE;
 
 export const rifle = new THREE.Group();
 

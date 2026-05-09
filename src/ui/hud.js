@@ -2,6 +2,7 @@
 // Also owns the player actions that touch every layer (fire, startReload,
 // finishReload, toggleScope) since they cross input → entities → fx → hud.
 
+import * as THREE from 'three';
 import { camera, canvas, updateCameraFov } from '../scene.js';
 import {
   state, cine, NESTS, CONTRACTS, MINI_SCALE, FOV_NORMAL,
@@ -13,8 +14,6 @@ import {
 } from '../entities/targets.js';
 import { buildingPositions } from '../world/city.js';
 import { nestIdx, setNest } from '../world/nests.js';
-
-const THREE = window.THREE;
 
 // ─── DOM refs (looked up once at module init) ───
 const scopeOverlay  = document.getElementById('scope');

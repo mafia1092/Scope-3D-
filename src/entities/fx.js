@@ -3,9 +3,8 @@
 // and spawnDustFx push live particles into the shared `particles` array; the
 // loop steps them forward and releases dead ones.
 
+import * as THREE from 'three';
 import { scene } from '../scene.js';
-
-const THREE = window.THREE;
 
 const PARTICLE_GEO = new THREE.SphereGeometry(0.08, 4, 4);
 const particlePool = [];

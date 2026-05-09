@@ -2,10 +2,9 @@
 // Builds the 3D platform mesh for each NEST in state.NESTS and exposes the
 // setNest() helper that teleports the camera (with optional fade transition).
 
+import * as THREE from 'three';
 import { scene, camera } from '../scene.js';
 import { state, NESTS } from '../state.js';
-
-const THREE = window.THREE;
 
 // Index of the nest the player is currently sitting in.
 export const nestIdx = { current: 0 };

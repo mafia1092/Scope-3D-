@@ -791,8 +791,10 @@
   <button class="cine-skip" id="cineSkip">SKIP ▸</button>
 </div>
 
-<!-- Three.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Three.js (ES module via importmap so JSM postprocessing modules can `import * as THREE from 'three'`) -->
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.128.0/build/three.module.js" } }
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
