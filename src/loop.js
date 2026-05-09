@@ -5,7 +5,7 @@
 import { renderer, scene, camera, composer, noirPass } from './scene.js';
 import { TIER, DEVICE_TIER } from './tier.js';
 import { state, cine } from './state.js';
-import { lookInput, aimInput, readKeyboardInput } from './input.js';
+import { lookInput, aimInput, readKeyboardInput, applyKeyboardMovement } from './input.js';
 import { updateRifle } from './entities/rifle.js';
 import { updateTargets } from './entities/targets.js';
 import { updateParticles } from './entities/fx.js';
@@ -39,6 +39,7 @@ function tick(){
 
   // Pull keyboard input into lookInput before consuming it
   readKeyboardInput();
+  applyKeyboardMovement(dt);
 
   // Camera control via look stick (yaw + pitch) — disabled during cinematic
   if (!cine.active) {

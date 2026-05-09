@@ -2,7 +2,7 @@
 // Joystick state lives here as a named export; the main loop reads it each
 // frame. Button handlers delegate to the player actions in ui/hud.js.
 
-import { canvas, updateCameraFov } from './scene.js';
+import { canvas, camera, updateCameraFov } from './scene.js';
 import { state, ZOOM_MIN, ZOOM_MAX } from './state.js';
 import { fire, startReload, toggleScope } from './ui/hud.js';
 
@@ -99,16 +99,52 @@ export function updateZoomUI(){
 const keys = Object.create(null);
 let _kbActive = false;
 
+// Desktop = PC. WASD here moves the camera (free-walk first person)
+// instead of adjusting look angles. Mouse handles look via pointer lock.
+const IS_DESKTOP = !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+const EYE_HEIGHT  = 1.7;
+const WALK_SPEED  = 7;
+const SPRINT_MULT = 1.8;
+
 export function readKeyboardInput(){
+  // On desktop, WASD/arrows move the player (handled by applyKeyboardMovement).
+  // No keyboard look — mouse via pointer lock takes care of that.
+  if (IS_DESKTOP) {
+    if (_kbActive) { lookInput.x = 0; lookInput.y = 0; _kbActive = false; }
+    return;
+  }
+  // Mobile (rare keyboard case): keep the old "WASD-as-look" behavior.
   const lx = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
   const ly = (keys['KeyS'] || keys['ArrowDown']  ? 1 : 0) - (keys['KeyW'] || keys['ArrowUp']   ? 1 : 0);
   if (lx || ly) {
     lookInput.x = lx; lookInput.y = ly;
     _kbActive = true;
   } else if (_kbActive) {
-    // released — clear so joystick (or zero) takes over
     lookInput.x = 0; lookInput.y = 0;
     _kbActive = false;
+  }
+}
+
+// PC only: translate the camera horizontally based on WASD/arrows + Shift to sprint.
+// Camera Y stays locked to eye level once the player starts walking, so teleporting
+// to a nest works for one beat — first WASD press drops you to ground level.
+export function applyKeyboardMovement(dt){
+  if (!IS_DESKTOP) return;
+  const fwd = (keys['KeyW'] || keys['ArrowUp']   ? 1 : 0) - (keys['KeyS'] || keys['ArrowDown']  ? 1 : 0);
+  const str = (keys['KeyD'] || keys['ArrowRight']? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft']  ? 1 : 0);
+  if (!fwd && !str) return;
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  const speed  = WALK_SPEED * (sprint ? SPRINT_MULT : 1);
+  const sin = Math.sin(state.yaw), cos = Math.cos(state.yaw);
+  // Forward at yaw=0 is -Z; strafe right at yaw=0 is +X.
+  const dx = (-sin * fwd + cos * str) * speed * dt;
+  const dz = (-cos * fwd - sin * str) * speed * dt;
+  camera.position.x += dx;
+  camera.position.z += dz;
+  // Drop to ground level the moment the player starts walking
+  // (so teleporting to a nest doesn't leave them floating in the air after they move).
+  if (camera.position.y > EYE_HEIGHT + 0.5) {
+    camera.position.y = EYE_HEIGHT;
   }
 }
 
