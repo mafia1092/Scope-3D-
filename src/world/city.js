@@ -9,8 +9,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'https://unpkg.com/three@0.128.0/examples/jsm/loaders/GLTFLoader.js';
 import { scene } from '../scene.js';
-import { rand } from '../state.js';
-import { NESTS } from './nests.js';
+import { rand, NESTS } from '../state.js';
 
 export const cityGroup = new THREE.Group();
 scene.add(cityGroup);
