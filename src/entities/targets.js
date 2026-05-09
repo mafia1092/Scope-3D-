@@ -296,9 +296,28 @@ export function animateDeath(target, isHead){
   hitables.dirty = true;
 }
 
+// Free GPU buffers (geometries/materials) for a removed target mesh tree.
+// Skips pooled/shared materials by checking _pooled flag (none today, but
+// keeps us forward-safe).
+function disposeMesh(root){
+  root.traverse(o => {
+    if (o.isMesh) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (m.map && m.map._pooled) continue;
+          m.dispose && m.dispose();
+        }
+      }
+    }
+  });
+}
+
 // Per-frame target update (called from main loop).
 export function updateTargets(dt){
   for (const t of targets) {
+    if (t.removed) continue; // fully cleaned up — skip every frame
     if (t.dying) {
       t.deathT += dt;
       const m = t.mesh;
@@ -311,14 +330,19 @@ export function updateTargets(dt){
           m.position.y = 0;
           if (t.deathT > 2 && !t.removed) {
             scene.remove(m);
+            disposeMesh(m);
             t.removed = true;
           }
         }
       } else {
-        // human falls flat
+        // human falls flat, then ~1.5s later we yank from scene
         if (m.rotation.x > -Math.PI / 2) {
           m.rotation.x -= dt * 3;
           if (m.rotation.x < -Math.PI / 2) m.rotation.x = -Math.PI / 2;
+        } else if (t.deathT > 1.8 && !t.removed) {
+          scene.remove(m);
+          disposeMesh(m);
+          t.removed = true;
         }
       }
       continue;

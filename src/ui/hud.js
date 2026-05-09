@@ -35,8 +35,9 @@ const miniCtx    = miniCanvas.getContext('2d');
 const labelsContainer = document.getElementById('targetLabels');
 const labelPool = [];
 
-// ─── Reusable raycaster (one shot per fire) ───
+// ─── Reusable raycaster (one shot per fire) + reused direction Vector3 ───
 const raycaster = new THREE.Raycaster();
+const _fireDir = new THREE.Vector3();
 
 // ─────── Player actions ───────
 export function fire(){
@@ -44,8 +45,14 @@ export function fire(){
   if (state.ammo <= 0 || state.reloading) return;
   state.ammo--;
 
-  flash.classList.remove('fire'); void flash.offsetWidth; flash.classList.add('fire');
-  canvas.classList.remove('recoil'); void canvas.offsetWidth; canvas.classList.add('recoil');
+  // Restart CSS animations without forcing a layout (offsetWidth thrash).
+  // Removing then re-adding in the next microtask is enough on modern browsers.
+  flash.classList.remove('fire');
+  canvas.classList.remove('recoil');
+  requestAnimationFrame(() => {
+    flash.classList.add('fire');
+    canvas.classList.add('recoil');
+  });
   // Rifle recoil
   rifleRecoil.offset = 0.08;
   // Haptic kick on fire
@@ -57,10 +64,9 @@ export function fire(){
   const swayX = (Math.sin(t * 1.4) + Math.sin(t * 3.1) * 0.3) * swayBase;
   const swayY = (Math.cos(t * 1.1) * 0.7 + Math.cos(t * 2.7) * 0.3) * swayBase;
 
-  const dir = new THREE.Vector3(swayX, swayY, -1).normalize();
-  dir.applyQuaternion(camera.quaternion);
+  _fireDir.set(swayX, swayY, -1).normalize().applyQuaternion(camera.quaternion);
 
-  raycaster.set(camera.position, dir);
+  raycaster.set(camera.position, _fireDir);
   raycaster.far = 1000;
 
   if (hitables.dirty || !hitables.cache) rebuildHitables();
@@ -142,20 +148,45 @@ export function toggleScope(){
 }
 
 // ─── Hit text floats up briefly above the impact point ───
+// Pooled DOM elements (bounded at 12) + reused Vector3 to avoid per-shot
+// allocation/GC churn under sustained firing.
+const HIT_TEXT_POOL = [];
+const HIT_TEXT_POOL_MAX = 12;
+const _hitTmpV = new THREE.Vector3();
+function _acquireHitTextEl(){
+  for (const e of HIT_TEXT_POOL) {
+    if (!e._inUse) return e;
+  }
+  if (HIT_TEXT_POOL.length < HIT_TEXT_POOL_MAX) {
+    const el = document.createElement('div');
+    el.className = 'hit-text';
+    document.body.appendChild(el);
+    HIT_TEXT_POOL.push(el);
+    return el;
+  }
+  // Pool full — recycle the oldest in-use element
+  const el = HIT_TEXT_POOL[0];
+  el.classList.remove('show');
+  return el;
+}
 function showHitText(worldPos, text, color){
-  const v = worldPos.clone().project(camera);
-  if (v.z > 1) return;
-  const sx = (v.x * 0.5 + 0.5) * window.innerWidth;
-  const sy = (-v.y * 0.5 + 0.5) * window.innerHeight;
-  const el = document.createElement('div');
-  el.className = 'hit-text';
+  _hitTmpV.copy(worldPos).project(camera);
+  if (_hitTmpV.z > 1) return;
+  const sx = (_hitTmpV.x * 0.5 + 0.5) * window.innerWidth;
+  const sy = (-_hitTmpV.y * 0.5 + 0.5) * window.innerHeight;
+  const el = _acquireHitTextEl();
+  el._inUse = true;
+  el.classList.remove('show');
   el.style.left = sx + 'px';
-  el.style.top = sy + 'px';
+  el.style.top  = sy + 'px';
   el.style.color = color;
   el.textContent = text;
-  document.body.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
-  setTimeout(() => el.remove(), 1000);
+  if (el._timeout) clearTimeout(el._timeout);
+  el._timeout = setTimeout(() => {
+    el.classList.remove('show');
+    el._inUse = false;
+  }, 1000);
 }
 
 // ─────── HUD updates ───────
@@ -215,6 +246,11 @@ function releaseUnusedLabels(){
   }
 }
 
+// Reusable Vector3 for label projection — was allocated per-target per-call
+const _labelTmpV = new THREE.Vector3();
+const _labelCandidates = [];
+const MAX_LABELS_SCOPED = 6; // cap label count when scoped to keep DOM cheap
+
 export function updateTargetLabels(){
   if (!labelsContainer) return; // not yet initialized
   if (!state.gameplayActive) {
@@ -222,25 +258,44 @@ export function updateTargetLabels(){
     return;
   }
 
+  // Build candidate list: contracts always; generics only when scoped, capped.
+  _labelCandidates.length = 0;
   for (const t of targets) {
-    if (!t.alive || t.dying) continue;
+    if (!t.alive || t.dying || t.removed) continue;
     const isContract = t.isContract;
     if (!isContract && !state.isScoped) continue;
-    // Distance / frustum culling
     const dx = t.mesh.position.x - camera.position.x;
     const dy = t.mesh.position.y - camera.position.y;
     const dz = t.mesh.position.z - camera.position.z;
     const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
     if (dist > 250) continue;
+    _labelCandidates.push({ t, dist, isContract });
+  }
+  // When scoped, keep contracts + the 6 closest generics (was uncapped — could
+  // hit ~12 DOM labels at once, which made scoped mode noticeably heavier).
+  if (state.isScoped) {
+    _labelCandidates.sort((a, b) => {
+      if (a.isContract !== b.isContract) return a.isContract ? -1 : 1;
+      return a.dist - b.dist;
+    });
+    let allowed = 0;
+    const trimmed = [];
+    for (const c of _labelCandidates) {
+      if (c.isContract) { trimmed.push(c); continue; }
+      if (allowed < MAX_LABELS_SCOPED) { trimmed.push(c); allowed++; }
+    }
+    _labelCandidates.length = 0;
+    for (const c of trimmed) _labelCandidates.push(c);
+  }
 
-    // Project to screen
-    const top = new THREE.Vector3(t.mesh.position.x, t.mesh.position.y + 3.2, t.mesh.position.z);
-    top.project(camera);
-    if (top.z > 1) continue;
-    if (top.x < -1.1 || top.x > 1.1 || top.y < -1.1 || top.y > 1.1) continue;
+  for (const { t, dist, isContract } of _labelCandidates) {
+    _labelTmpV.set(t.mesh.position.x, t.mesh.position.y + 3.2, t.mesh.position.z);
+    _labelTmpV.project(camera);
+    if (_labelTmpV.z > 1) continue;
+    if (_labelTmpV.x < -1.1 || _labelTmpV.x > 1.1 || _labelTmpV.y < -1.1 || _labelTmpV.y > 1.1) continue;
 
-    const sx = (top.x * 0.5 + 0.5) * window.innerWidth;
-    const sy = (-top.y * 0.5 + 0.5) * window.innerHeight;
+    const sx = (_labelTmpV.x * 0.5 + 0.5) * window.innerWidth;
+    const sy = (-_labelTmpV.y * 0.5 + 0.5) * window.innerHeight;
 
     const node = getLabelNode();
     node._touched = true;
@@ -305,9 +360,9 @@ export function updateMinimap(){
     miniCtx.fillRect(p.x - sx/2, p.y - sz/2, sx, sz);
   }
 
-  // Targets — contracts as red, others faint
+  // Targets — contracts as red, others faint. Skip dead/removed.
   for (const t of targets) {
-    if (!t.alive) continue;
+    if (!t.alive || t.removed) continue;
     const p = worldToMini(t.mesh.position.x, t.mesh.position.z);
     if (t.isContract) {
       miniCtx.fillStyle = '#d94a3d';

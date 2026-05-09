@@ -1,16 +1,20 @@
 // ─────── Device tier detection ───────
 // Picks pixelRatio, sky segments, head segments, fog distance, and HUD
 // throttling based on platform & cores. No THREE / DOM dependencies.
+// URL ?tier=low|mid|high overrides auto-detect (handy for desktop tuning).
 
-export const DEVICE_TIER = (() => {
-  const ua = navigator.userAgent;
-  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-  const cores = navigator.hardwareConcurrency || 4;
-  const mem = navigator.deviceMemory || 4;
-  if (!isMobile && cores >= 8) return 'high';
-  if (isMobile && (cores <= 4 || mem <= 3)) return 'low';
-  return 'mid';
-})();
+const _tierOverride = new URLSearchParams(location.search).get('tier');
+export const DEVICE_TIER = (_tierOverride && ['low','mid','high'].includes(_tierOverride))
+  ? _tierOverride
+  : (() => {
+      const ua = navigator.userAgent;
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+      const cores = navigator.hardwareConcurrency || 4;
+      const mem = navigator.deviceMemory || 4;
+      if (!isMobile && cores >= 8) return 'high';
+      if (isMobile && (cores <= 4 || mem <= 3)) return 'low';
+      return 'mid';
+    })();
 
 export const TIER = {
   low:  { pixelRatio: 1.0,  skySeg: [10, 6],  headSeg: 8,  shadowMap: false, fogFar: 240, throttleLabels: 6, throttleMini: 4 },

@@ -94,11 +94,12 @@ export function buildCity(){
     return entry;
   }
 
-  // 3 rings (reduced for mobile perf, pushed out to make room for nests)
+  // 3 rings (reduced again from 14/18/22 → 10/14/18 — fewer draw calls,
+  // still plenty of skyline silhouette since outer ring distances are large)
   const rings = [
-    { count: 14, rDist: 70,  hMin: 30, hMax: 80,  wMin: 10, wMax: 16 },
-    { count: 18, rDist: 130, hMin: 40, hMax: 110, wMin: 12, wMax: 20 },
-    { count: 22, rDist: 200, hMin: 50, hMax: 140, wMin: 14, wMax: 24 },
+    { count: 10, rDist: 70,  hMin: 30, hMax: 80,  wMin: 10, wMax: 16 },
+    { count: 14, rDist: 130, hMin: 40, hMax: 110, wMin: 12, wMax: 20 },
+    { count: 18, rDist: 200, hMin: 50, hMax: 140, wMin: 14, wMax: 24 },
   ];
 
   rings.forEach(ring => {

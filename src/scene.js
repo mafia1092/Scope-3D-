@@ -18,6 +18,9 @@ export const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, TIER.pixelRatio));
 renderer.setClearColor(0x0a0d12);
+// Defensive: ensure shadow map is OFF (we don't use it; some browsers/extensions
+// can flip it on, which silently kills perf).
+renderer.shadowMap.enabled = false;
 
 // Handle context loss gracefully
 canvas.addEventListener('webglcontextlost', e => {

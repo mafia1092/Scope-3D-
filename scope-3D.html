@@ -647,6 +647,21 @@
     .minimap-canvas-wrap{ width:130px;height:130px; }
     .minimap-canvas-wrap canvas{ width:130px;height:130px; }
   }
+
+  /* FPS / tier diagnostic overlay */
+  .fps-readout{
+    position:fixed;
+    top:calc(env(safe-area-inset-top) + 50px);
+    right:14px;
+    font-family:'Anton',sans-serif;
+    font-size:14px;
+    color:var(--gold);
+    pointer-events:none;
+    z-index:50;
+    opacity:0.85;
+    text-shadow:0 1px 3px rgba(0,0,0,0.95);
+    letter-spacing:0.08em;
+  }
 </style>
 </head>
 <body>
@@ -697,6 +712,7 @@
 <div class="flash" id="flash"></div>
 <div class="fader" id="fader"></div>
 <div id="targetLabels"></div>
+<div class="fps-readout" id="fpsReadout">— FPS</div>
 
 <!-- Minimap -->
 <div class="minimap" id="minimap">
@@ -789,16 +805,19 @@
   const canvas = document.getElementById('canvas');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference:'high-performance' });
 
-  // ─── Device tier detection ───
-  const DEVICE_TIER = (() => {
-    const ua = navigator.userAgent;
-    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
-    const cores = navigator.hardwareConcurrency || 4;
-    const mem = navigator.deviceMemory || 4;
-    if (!isMobile && cores >= 8) return 'high';
-    if (isMobile && (cores <= 4 || mem <= 3)) return 'low';
-    return 'mid';
-  })();
+  // ─── Device tier detection (with ?tier=low|mid|high override) ───
+  const _tierOverride = new URLSearchParams(location.search).get('tier');
+  const DEVICE_TIER = (_tierOverride && ['low','mid','high'].includes(_tierOverride))
+    ? _tierOverride
+    : (() => {
+        const ua = navigator.userAgent;
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+        const cores = navigator.hardwareConcurrency || 4;
+        const mem = navigator.deviceMemory || 4;
+        if (!isMobile && cores >= 8) return 'high';
+        if (isMobile && (cores <= 4 || mem <= 3)) return 'low';
+        return 'mid';
+      })();
   const TIER = {
     low:  { pixelRatio: 1.0, skySeg: [10, 6], headSeg: 8,  shadowMap: false, fogFar: 240, throttleLabels: 6, throttleMini: 4 },
     mid:  { pixelRatio: 1.25, skySeg: [16, 8], headSeg: 10, shadowMap: false, fogFar: 320, throttleLabels: 4, throttleMini: 3 },
@@ -807,6 +826,9 @@
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, TIER.pixelRatio));
   renderer.setClearColor(0x0a0d12);
+  // Defensive: ensure shadow map is OFF (we don't use it; some browsers/extensions
+  // can flip it on, which silently kills perf).
+  renderer.shadowMap.enabled = false;
 
   // ─── Particle pool (shared geometry, recycled meshes) ───
   const PARTICLE_GEO = new THREE.SphereGeometry(0.08, 4, 4);
@@ -826,6 +848,26 @@
     p.visible = false;
     p.parent && p.parent.remove(p);
     particlePool.push(p);
+  }
+
+  // ─── Dispose helpers — free GPU buffers / textures for removed meshes ───
+  // Skip shared materials (PARTICLE_GEO, sky, building textures) — they're
+  // pooled. We only call this on per-target geometries / materials we own.
+  function disposeMesh(root){
+    root.traverse(o => {
+      if(o.isMesh){
+        if(o.geometry) o.geometry.dispose();
+        if(o.material){
+          // Materials may be arrays (BoxGeometry can use one mat per face)
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for(const m of mats){
+            // Don't dispose pooled / shared materials with cached textures
+            if(m.map && m.map._pooled) continue;
+            m.dispose && m.dispose();
+          }
+        }
+      }
+    });
   }
 
   // Handle context loss gracefully
@@ -1195,11 +1237,12 @@
       return entry;
     }
 
-    // 3 rings (reduced for mobile perf, pushed out to make room for nests)
+    // 3 rings (reduced again from 14/18/22 → 10/14/18 — fewer draw calls,
+    // still plenty of skyline silhouette since outer ring distances are large)
     const rings = [
-      { count: 14, rDist: 70, hMin: 30, hMax: 80, wMin: 10, wMax: 16 },
-      { count: 18, rDist: 130, hMin: 40, hMax: 110, wMin: 12, wMax: 20 },
-      { count: 22, rDist: 200, hMin: 50, hMax: 140, wMin: 14, wMax: 24 },
+      { count: 10, rDist: 70, hMin: 30, hMax: 80, wMin: 10, wMax: 16 },
+      { count: 14, rDist: 130, hMin: 40, hMax: 110, wMin: 12, wMax: 20 },
+      { count: 18, rDist: 200, hMin: 50, hMax: 140, wMin: 14, wMax: 24 },
     ];
 
     rings.forEach(ring=>{
@@ -1917,6 +1960,8 @@
 
   // ─────── Raycaster for shooting ───────
   const raycaster = new THREE.Raycaster();
+  // Reused per-shot direction vector (was allocated on every fire())
+  const _fireDir = new THREE.Vector3();
 
   // Rebuild the cached hitables list (cache vars declared earlier)
   function rebuildHitables(){
@@ -1940,8 +1985,14 @@
     if(state.ammo<=0 || state.reloading) return;
     state.ammo--;
 
-    flash.classList.remove('fire'); void flash.offsetWidth; flash.classList.add('fire');
-    canvas.classList.remove('recoil'); void canvas.offsetWidth; canvas.classList.add('recoil');
+    // Restart CSS animations without forcing a layout (offsetWidth thrash).
+    // Removing then re-adding in the next microtask is enough on modern browsers.
+    flash.classList.remove('fire');
+    canvas.classList.remove('recoil');
+    requestAnimationFrame(() => {
+      flash.classList.add('fire');
+      canvas.classList.add('recoil');
+    });
     // Rifle recoil
     rifleRecoilOffset = 0.08;
     // Haptic kick on fire
@@ -1953,11 +2004,10 @@
     const swayX = (Math.sin(t*1.4) + Math.sin(t*3.1)*0.3) * swayBase;
     const swayY = (Math.cos(t*1.1)*0.7 + Math.cos(t*2.7)*0.3) * swayBase;
 
-    // Build a normalized direction in camera space, then to world
-    const dir = new THREE.Vector3(swayX, swayY, -1).normalize();
-    dir.applyQuaternion(camera.quaternion);
+    // Build a normalized direction in camera space, then to world (reused vector)
+    _fireDir.set(swayX, swayY, -1).normalize().applyQuaternion(camera.quaternion);
 
-    raycaster.set(camera.position, dir);
+    raycaster.set(camera.position, _fireDir);
     raycaster.far = 1000;
 
     // Use cached hitables list — rebuilt only on changes
@@ -2015,10 +2065,11 @@
     hitablesDirty = true;
   }
 
-  // Particle system for hits — uses shared pool/geometry
+  // Particle system for hits — uses shared pool/geometry.
+  // Counts dropped (was 16/10) to cut per-shot allocation cost & GPU draws.
   const particles = [];
   function spawnHitFx(pos, head, type){
-    const count = head ? 16 : 10;
+    const count = head ? 10 : 6;
     const color = head ? 0xff4030 : (type==='drone' ? 0x888888 : 0xa83c2a);
     for(let i=0;i<count;i++){
       const p = getParticle(color);
@@ -2034,7 +2085,7 @@
     }
   }
   function spawnDustFx(pos){
-    for(let i=0;i<6;i++){
+    for(let i=0;i<4;i++){
       const p = getParticle(0xa89968);
       p.material.opacity = 0.8;
       p.position.copy(pos);
@@ -2049,22 +2100,48 @@
     }
   }
 
-  // Hit text DOM
+  // Hit text DOM — pooled (re-used div elements). Bounded at 12 to prevent
+  // unbounded growth under sustained firing.
+  const HIT_TEXT_POOL = [];
+  const HIT_TEXT_POOL_MAX = 12;
+  // Reuse a single Vector3 for projection — avoids per-shot Vector3 allocation
+  const _hitTmpV = new THREE.Vector3();
+  function _acquireHitTextEl(){
+    for(const e of HIT_TEXT_POOL){
+      if(!e._inUse) return e;
+    }
+    if(HIT_TEXT_POOL.length < HIT_TEXT_POOL_MAX){
+      const el = document.createElement('div');
+      el.className = 'hit-text';
+      document.body.appendChild(el);
+      HIT_TEXT_POOL.push(el);
+      return el;
+    }
+    // Pool full — recycle the oldest by clearing its show state immediately
+    const el = HIT_TEXT_POOL[0];
+    el.classList.remove('show');
+    return el;
+  }
   function showHitText(worldPos, text, color){
-    // Project worldPos to screen
-    const v = worldPos.clone().project(camera);
-    if(v.z > 1) return;
-    const sx = (v.x * 0.5 + 0.5) * window.innerWidth;
-    const sy = (-v.y * 0.5 + 0.5) * window.innerHeight;
-    const el = document.createElement('div');
-    el.className = 'hit-text';
+    // Project worldPos to screen — reuse temp Vector3 to avoid allocation
+    _hitTmpV.copy(worldPos).project(camera);
+    if(_hitTmpV.z > 1) return;
+    const sx = (_hitTmpV.x * 0.5 + 0.5) * window.innerWidth;
+    const sy = (-_hitTmpV.y * 0.5 + 0.5) * window.innerHeight;
+    const el = _acquireHitTextEl();
+    el._inUse = true;
+    el.classList.remove('show');
     el.style.left = sx + 'px';
     el.style.top = sy + 'px';
     el.style.color = color;
     el.textContent = text;
-    document.body.appendChild(el);
+    // Force a frame before re-adding `.show` so the CSS animation restarts cleanly
     requestAnimationFrame(()=>el.classList.add('show'));
-    setTimeout(()=>el.remove(), 1000);
+    if(el._timeout) clearTimeout(el._timeout);
+    el._timeout = setTimeout(()=>{
+      el.classList.remove('show');
+      el._inUse = false;
+    }, 1000);
   }
 
   // ─────── HUD updates ───────
@@ -2111,11 +2188,23 @@
   // ─────── Main loop ───────
   let lastT = performance.now();
   let _frame = 0;
+  // FPS smoothing — accumulator over ~250ms so the readout doesn't flicker
+  const fpsEl = document.getElementById('fpsReadout');
+  let _fpsAcc = 0, _fpsCount = 0, _lastFpsUpdate = performance.now();
   function loop(){
     const now = performance.now();
     const dt = Math.min(0.05, (now - lastT)/1000);
     lastT = now;
     _frame++;
+
+    // FPS readout (smoothed, refreshed ~4×/s)
+    _fpsAcc += 1 / Math.max(0.001, dt);
+    _fpsCount++;
+    if (now - _lastFpsUpdate > 250) {
+      const fps = Math.round(_fpsAcc / _fpsCount);
+      if (fpsEl) fpsEl.textContent = fps + ' FPS · ' + DEVICE_TIER;
+      _fpsAcc = 0; _fpsCount = 0; _lastFpsUpdate = now;
+    }
 
     // Pull keyboard input into lookInput before consuming it
     readKeyboardInput();
@@ -2182,6 +2271,7 @@
 
     // Targets: animate movement
     for(const t of targets){
+      if(t.removed) continue; // fully cleaned up — skip every frame
       if(t.dying){
         t.deathT += dt;
         const m = t.mesh;
@@ -2193,17 +2283,23 @@
           t.fallSpeed += 9.8 * dt; // gravity
           if(m.position.y < 0){
             m.position.y = 0;
-            // remove from scene after a beat
+            // remove from scene after a beat & dispose its geometries / materials
             if(t.deathT > 2 && !t.removed){
               scene.remove(m);
+              disposeMesh(m);
               t.removed = true;
             }
           }
         } else {
-          // human falls flat
+          // human falls flat, then ~1.5s later we yank from scene
           if(m.rotation.x > -Math.PI/2){
             m.rotation.x -= dt * 3;
             if(m.rotation.x < -Math.PI/2) m.rotation.x = -Math.PI/2;
+          } else if(t.deathT > 1.8 && !t.removed){
+            // Body has settled — remove from scene to stop draw + traversal cost
+            scene.remove(m);
+            disposeMesh(m);
+            t.removed = true;
           }
         }
         continue;
@@ -2436,9 +2532,9 @@
       miniCtx.fillRect(p.x - sx/2, p.y - sz/2, sx, sz);
     }
 
-    // Targets — contracts as red, others faint
+    // Targets — contracts as red, others faint. Skip dead/removed.
     for(const t of targets){
-      if(!t.alive) continue;
+      if(!t.alive || t.removed) continue;
       const p = worldToMini(t.mesh.position.x, t.mesh.position.z);
       if(t.isContract){
         miniCtx.fillStyle = '#d94a3d';
@@ -2570,6 +2666,12 @@
     }
   }
 
+  // Reusable Vector3 for label projection — was allocated per-target per-call
+  const _labelTmpV = new THREE.Vector3();
+  // Scratch buffer for the distance-sorted candidate list when scoped
+  const _labelCandidates = [];
+  const MAX_LABELS_SCOPED = 6; // cap label count when scoped to avoid DOM blow-up
+
   function updateTargetLabels(){
     if(!labelsContainer) return; // not yet initialized
     if(!state.gameplayActive) {
@@ -2578,32 +2680,49 @@
       return;
     }
 
+    // Build candidate list: contracts always; generics only when scoped, capped.
+    _labelCandidates.length = 0;
     for(const t of targets){
-      if(!t.alive || t.dying) continue;
-      // Only show contract markers always; show generic markers only when scoped
+      if(!t.alive || t.dying || t.removed) continue;
       const isContract = t.isContract;
       if(!isContract && !state.isScoped) continue;
-      // Only show if reasonably close & in front
       const dx = t.mesh.position.x - camera.position.x;
       const dy = t.mesh.position.y - camera.position.y;
       const dz = t.mesh.position.z - camera.position.z;
       const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
       if(dist > 250) continue;
+      _labelCandidates.push({ t, dist, isContract });
+    }
+    // When scoped, keep contracts + the 6 closest generics (was uncapped — could
+    // hit ~12 DOM labels at once, which made scoped mode noticeably heavier).
+    if(state.isScoped){
+      _labelCandidates.sort((a,b)=>{
+        // contracts first, then by ascending distance
+        if(a.isContract !== b.isContract) return a.isContract ? -1 : 1;
+        return a.dist - b.dist;
+      });
+      let kept = 0;
+      let allowed = 0;
+      const trimmed = [];
+      for(const c of _labelCandidates){
+        if(c.isContract){ trimmed.push(c); continue; }
+        if(allowed < MAX_LABELS_SCOPED){ trimmed.push(c); allowed++; }
+      }
+      _labelCandidates.length = 0;
+      for(const c of trimmed) _labelCandidates.push(c);
+    }
 
-      // Project to screen
-      const top = new THREE.Vector3(t.mesh.position.x, t.mesh.position.y + 3.2, t.mesh.position.z);
-      top.project(camera);
-      // Behind camera
-      if(top.z > 1) continue;
-      // Off screen with some margin
-      if(top.x < -1.1 || top.x > 1.1 || top.y < -1.1 || top.y > 1.1) continue;
+    for(const { t, dist, isContract } of _labelCandidates){
+      _labelTmpV.set(t.mesh.position.x, t.mesh.position.y + 3.2, t.mesh.position.z);
+      _labelTmpV.project(camera);
+      if(_labelTmpV.z > 1) continue; // behind camera
+      if(_labelTmpV.x < -1.1 || _labelTmpV.x > 1.1 || _labelTmpV.y < -1.1 || _labelTmpV.y > 1.1) continue;
 
-      const sx = (top.x * 0.5 + 0.5) * window.innerWidth;
-      const sy = (-top.y * 0.5 + 0.5) * window.innerHeight;
+      const sx = (_labelTmpV.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-_labelTmpV.y * 0.5 + 0.5) * window.innerHeight;
 
       const node = getLabelNode();
       node._touched = true;
-      // Class by kind
       const cls = isContract ? 'contract' : (t.targetKind || 'soldier');
       node.className = 'tgt-label ' + cls;
       node.style.left = sx + 'px';

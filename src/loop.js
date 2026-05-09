@@ -3,7 +3,7 @@
 // HUD pieces (compass, labels, minimap) are throttled per device tier.
 
 import { renderer, scene, camera } from './scene.js';
-import { TIER } from './tier.js';
+import { TIER, DEVICE_TIER } from './tier.js';
 import { state, cine } from './state.js';
 import { lookInput, aimInput, readKeyboardInput } from './input.js';
 import { updateRifle } from './entities/rifle.js';
@@ -18,11 +18,24 @@ let lastT = 0;
 let _frame = 0;
 let running = false;
 
+// FPS smoothing — accumulator over ~250ms so the readout doesn't flicker
+const fpsEl = document.getElementById('fpsReadout');
+let _fpsAcc = 0, _fpsCount = 0, _lastFpsUpdate = 0;
+
 function tick(){
   const now = performance.now();
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
   _frame++;
+
+  // FPS readout (smoothed, refreshed ~4×/s)
+  _fpsAcc += 1 / Math.max(0.001, dt);
+  _fpsCount++;
+  if (now - _lastFpsUpdate > 250) {
+    const fps = Math.round(_fpsAcc / _fpsCount);
+    if (fpsEl) fpsEl.textContent = fps + ' FPS · ' + DEVICE_TIER;
+    _fpsAcc = 0; _fpsCount = 0; _lastFpsUpdate = now;
+  }
 
   // Pull keyboard input into lookInput before consuming it
   readKeyboardInput();
@@ -82,6 +95,7 @@ export function start(){
   if (running) return;
   running = true;
   lastT = performance.now();
+  _lastFpsUpdate = lastT;
   requestAnimationFrame(tick);
 }
 

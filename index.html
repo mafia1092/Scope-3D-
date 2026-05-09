@@ -647,6 +647,21 @@
     .minimap-canvas-wrap{ width:130px;height:130px; }
     .minimap-canvas-wrap canvas{ width:130px;height:130px; }
   }
+
+  /* FPS / tier diagnostic overlay */
+  .fps-readout{
+    position:fixed;
+    top:calc(env(safe-area-inset-top) + 50px);
+    right:14px;
+    font-family:'Anton',sans-serif;
+    font-size:14px;
+    color:var(--gold);
+    pointer-events:none;
+    z-index:50;
+    opacity:0.85;
+    text-shadow:0 1px 3px rgba(0,0,0,0.95);
+    letter-spacing:0.08em;
+  }
 </style>
 </head>
 <body>
@@ -697,6 +712,7 @@
 <div class="flash" id="flash"></div>
 <div class="fader" id="fader"></div>
 <div id="targetLabels"></div>
+<div class="fps-readout" id="fpsReadout">— FPS</div>
 
 <!-- Minimap -->
 <div class="minimap" id="minimap">

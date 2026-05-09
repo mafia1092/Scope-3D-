@@ -34,8 +34,9 @@ export function releaseParticle(p){
 // Live particles. Each entry: { mesh, vx, vy, vz, life }.
 export const particles = [];
 
+// Counts dropped from 16/10 to 10/6 to cut per-shot allocation cost & GPU draws.
 export function spawnHitFx(pos, head, type){
-  const count = head ? 16 : 10;
+  const count = head ? 10 : 6;
   const color = head ? 0xff4030 : (type === 'drone' ? 0x888888 : 0xa83c2a);
   for (let i = 0; i < count; i++) {
     const p = getParticle(color);
@@ -52,7 +53,7 @@ export function spawnHitFx(pos, head, type){
 }
 
 export function spawnDustFx(pos){
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 4; i++) {
     const p = getParticle(0xa89968);
     p.material.opacity = 0.8;
     p.position.copy(pos);
