@@ -1,3 +1,6 @@
 # Heavy binary assets — kept locally, not committed
 assets/sky.hdr
 *.hdr
+
+# Claude Code internal state (agent worktrees, local settings)
+.claude/
