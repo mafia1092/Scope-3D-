@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Property Viewer — Human Avatar Demo</title>
+<style>
+  :root { --panel: #161a20; --line: #2a2f38; --ink: #d6dae0; --accent: #6ca8ff; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #0c0e12; }
+  body { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: var(--ink); }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed; top: 14px; left: 14px; z-index: 10;
+    background: rgba(22,26,32,0.82); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px 14px; width: 232px;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+  #hud h1 { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; }
+  #hud .row { display: flex; justify-content: space-between; align-items: center; margin: 7px 0; font-size: 11px; }
+  #hud label { opacity: 0.7; }
+  #hud input[type=range] { width: 116px; accent-color: var(--accent); }
+  #hud select {
+    background: #0c0e12; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 4px; font: inherit; font-size: 11px; padding: 2px 4px;
+  }
+  #hud .val { color: var(--accent); min-width: 54px; text-align: right; }
+  #hud hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+  #measure { font-size: 10px; line-height: 1.7; opacity: 0.78; }
+  #measure b { color: var(--accent); font-weight: normal; }
+
+  #viewTag {
+    position: fixed; top: 14px; right: 14px; z-index: 10;
+    background: rgba(22,26,32,0.82); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 14px; font-size: 12px; letter-spacing: 0.08em;
+  }
+  #viewTag b { color: var(--accent); }
+
+  #help {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 10;
+    background: rgba(22,26,32,0.82); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 16px; font-size: 11px; opacity: 0.85;
+    white-space: nowrap;
+  }
+  #help kbd {
+    background: #0c0e12; border: 1px solid var(--line); border-radius: 3px;
+    padding: 1px 5px; margin: 0 2px; color: var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <h1>Avatar — real-world body</h1>
+  <div class="row">
+    <label for="height">Height</label>
+    <input id="height" type="range" min="1.40" max="2.10" step="0.01" value="1.75" />
+    <span class="val" id="heightVal">1.75 m</span>
+  </div>
+  <div class="row">
+    <label for="build">Build</label>
+    <select id="build">
+      <option value="slim">Slim</option>
+      <option value="average" selected>Average</option>
+      <option value="broad">Broad</option>
+    </select>
+  </div>
+  <div class="row">
+    <label for="gender">Frame</label>
+    <select id="gender">
+      <option value="male">Male</option>
+      <option value="female">Female</option>
+      <option value="neutral" selected>Neutral</option>
+    </select>
+  </div>
+  <hr />
+  <div id="measure"></div>
+</div>
+
+<div id="viewTag">View: <b id="viewName">3rd person</b> &nbsp;·&nbsp; <kbd>V</kbd> to switch</div>
+
+<div id="help">
+  <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move &nbsp;·&nbsp;
+  <kbd>Shift</kbd> run &nbsp;·&nbsp;
+  <kbd>V</kbd> 1st/3rd person &nbsp;·&nbsp;
+  <span id="lookHelp">drag to orbit</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createCharacter } from './character.js';
+
+// ── Renderer / scene / camera ────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0c0e12);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 500);
+
+// ── Lighting ─────────────────────────────────────────────────────────────
+scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x202024, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(5, 9, 4);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 40;
+sun.shadow.camera.left = -12; sun.shadow.camera.right = 12;
+sun.shadow.camera.top = 12;  sun.shadow.camera.bottom = -12;
+scene.add(sun);
+
+// ── Placeholder "property": floor + a few walls so there's space to walk ──
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x3c4250, roughness: 0.95 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(60, 60, 0x55607a, 0x2a2f3a);
+grid.position.y = 0.002;
+scene.add(grid);
+
+// a couple of simple rooms — walls are 2.6 m tall (real ceiling height)
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x5a6172, roughness: 0.9 });
+function wall(w, x, z, ry) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 2.6, 0.12), wallMat);
+  m.position.set(x, 1.3, z);
+  m.rotation.y = ry;
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m);
+}
+wall(8, 0, -4, 0);     wall(8, 0,  4, 0);
+wall(8, -4, 0, Math.PI / 2);
+wall(3.4, 3.3, 0, Math.PI / 2);   wall(3.4, 4.7, 0, Math.PI / 2);
+
+// reference cube — 1 m, to sanity-check that scale reads as real
+const refMat = new THREE.MeshStandardMaterial({ color: 0x6c8f5a, roughness: 0.8 });
+const ref = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), refMat);
+ref.position.set(-2.5, 0.5, -1.5);
+ref.castShadow = true;
+scene.add(ref);
+
+// ── Character ────────────────────────────────────────────────────────────
+let human = null;
+const heading = { yaw: 0, pitch: 0 };     // body yaw + head pitch (1st person)
+
+function buildHuman() {
+  const wasFirst = view === 'first';
+  if (human) {
+    if (wasFirst) human.eyeAnchor.remove(camera);
+    scene.remove(human.root);
+    human.dispose();
+  }
+  human = createCharacter({
+    height: parseFloat(heightEl.value),
+    build: buildEl.value,
+    gender: genderEl.value,
+  });
+  human.root.rotation.y = heading.yaw;
+  scene.add(human.root);
+  if (wasFirst) {
+    human.joints.head.rotation.x = heading.pitch;
+    human.eyeAnchor.add(camera);
+    camera.position.set(0, 0, 0);
+    camera.rotation.set(0, 0, 0);
+  }
+  showMeasurements();
+}
+
+function showMeasurements() {
+  const m = human.measurements;
+  measureEl.innerHTML =
+    `Height &nbsp; <b>${m.height.toFixed(2)} m</b><br>` +
+    `Eye level <b>${m.eyeHeight.toFixed(2)} m</b><br>` +
+    `Shoulders <b>${m.shoulderWidth.toFixed(2)} m</b><br>` +
+    `Arm span <b>${m.armSpan.toFixed(2)} m</b><br>` +
+    `Hip level <b>${m.hipHeight.toFixed(2)} m</b>`;
+}
+
+// ── Camera modes ─────────────────────────────────────────────────────────
+let view = 'third';                       // 'third' | 'first'
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true;
+orbit.dampingFactor = 0.08;
+orbit.minDistance = 1.2;
+orbit.maxDistance = 14;
+orbit.maxPolarAngle = Math.PI * 0.49;     // don't dip below the floor
+
+function enterThird() {
+  view = 'third';
+  human.eyeAnchor.remove(camera);
+  camera.position.set(3.2, human.height * 0.9, 4.4);
+  orbit.enabled = true;
+  viewNameEl.textContent = '3rd person';
+  lookHelpEl.textContent = 'drag to orbit';
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+function enterFirst() {
+  view = 'first';
+  orbit.enabled = false;
+  human.joints.head.rotation.x = heading.pitch;
+  human.eyeAnchor.add(camera);
+  camera.position.set(0, 0, 0);
+  camera.rotation.set(0, 0, 0);
+  viewNameEl.textContent = '1st person';
+  lookHelpEl.textContent = 'click → mouse-look';
+}
+
+function toggleView() { view === 'third' ? enterFirst() : enterThird(); }
+
+// ── 1st-person mouse-look (pointer lock) ─────────────────────────────────
+renderer.domElement.addEventListener('click', () => {
+  if (view === 'first' && document.pointerLockElement !== renderer.domElement) {
+    renderer.domElement.requestPointerLock();
+  }
+});
+addEventListener('mousemove', (e) => {
+  if (view !== 'first' || document.pointerLockElement !== renderer.domElement) return;
+  heading.yaw   -= e.movementX * 0.0024;
+  heading.pitch -= e.movementY * 0.0024;
+  heading.pitch = Math.max(-1.2, Math.min(1.2, heading.pitch));
+  human.root.rotation.y = heading.yaw;
+  human.joints.head.rotation.x = heading.pitch;
+});
+
+// ── Keyboard movement ────────────────────────────────────────────────────
+const keys = Object.create(null);
+addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'KeyV') toggleView();
+});
+addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+const WALK = 2.4, RUN = 4.8;               // metres / second (real walking pace)
+const _move = new THREE.Vector3();
+
+function updateMovement(dt) {
+  const f = (keys['KeyW'] || keys['ArrowUp']   ? 1 : 0) - (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
+  const s = (keys['KeyD'] || keys['ArrowRight']? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+  if (!f && !s) return;
+  const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? RUN : WALK;
+
+  if (view === 'first') {
+    // move relative to the body's facing
+    const sin = Math.sin(heading.yaw), cos = Math.cos(heading.yaw);
+    _move.set(-sin * f + cos * s, 0, -cos * f - sin * s);
+  } else {
+    // move relative to the camera's horizontal facing
+    const camDir = new THREE.Vector3();
+    camera.getWorldDirection(camDir);
+    camDir.y = 0; camDir.normalize();
+    // right-hand vector = camDir × up
+    const right = new THREE.Vector3(-camDir.z, 0, camDir.x);
+    _move.copy(camDir).multiplyScalar(f).addScaledVector(right, s);
+    if (_move.lengthSq() > 0) {
+      _move.normalize();
+      // turn the body to face travel direction
+      heading.yaw = Math.atan2(-_move.x, -_move.z);
+      human.root.rotation.y = heading.yaw;
+    }
+  }
+  human.root.position.addScaledVector(_move, speed * dt);
+}
+
+// ── UI wiring ────────────────────────────────────────────────────────────
+const heightEl  = document.getElementById('height');
+const heightVal = document.getElementById('heightVal');
+const buildEl   = document.getElementById('build');
+const genderEl  = document.getElementById('gender');
+const measureEl = document.getElementById('measure');
+const viewNameEl= document.getElementById('viewName');
+const lookHelpEl= document.getElementById('lookHelp');
+
+heightEl.addEventListener('input', () => {
+  heightVal.textContent = parseFloat(heightEl.value).toFixed(2) + ' m';
+  buildHuman();
+});
+buildEl.addEventListener('change', buildHuman);
+genderEl.addEventListener('change', buildHuman);
+
+// ── Boot ─────────────────────────────────────────────────────────────────
+buildHuman();
+enterThird();
+orbit.target.set(0, human.height * 0.55, 0);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+let last = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  updateMovement(dt);
+  if (view === 'third') {
+    orbit.target.lerp(
+      new THREE.Vector3(human.root.position.x,
+                        human.root.position.y + human.height * 0.55,
+                        human.root.position.z), 0.18);
+    orbit.update();
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
