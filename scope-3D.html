@@ -1,0 +1,2869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>SCOPE · 3D</title>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Share+Tech+Mono&family=Anton&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0d12;
+    --steel:#3a4452;
+    --sand:#d4c896;
+    --bone:#e8dfc4;
+    --rust:#a83c2a;
+    --kill:#d94a3d;
+    --green:#7ba05b;
+    --gold:#f0b429;
+    --shadow:#04060a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;}
+  html,body{
+    height:100%;height:100dvh;overflow:hidden;
+    background:var(--bg);color:var(--bone);
+    font-family:'Share Tech Mono',monospace;
+    overscroll-behavior:none;touch-action:none;
+  }
+  body{position:relative;}
+
+  /* HUD */
+  .hud{
+    position:fixed;top:0;left:0;right:0;
+    padding:calc(env(safe-area-inset-top) + 10px) 14px 8px;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    z-index:30;pointer-events:none;
+    color:var(--sand);font-size:11px;letter-spacing:0.12em;
+    text-shadow:0 1px 2px rgba(0,0,0,0.9);
+  }
+  .hud .label{opacity:0.55;font-size:9px;letter-spacing:0.2em;}
+  .hud .val{font-size:18px;font-family:'Anton',sans-serif;letter-spacing:0.05em;line-height:1;}
+  .hud-block{display:flex;flex-direction:column;gap:3px;}
+  .hud-right{text-align:right;}
+  .hud .ammo-line{
+    font-family:'Anton',sans-serif;font-size:14px;
+    letter-spacing:0.1em;color:var(--bone);margin-top:3px;
+  }
+  .hud .ammo-line.low{color:var(--rust);animation:blink 0.6s infinite;}
+  @keyframes blink{50%{opacity:0.3;}}
+
+  /* Compass */
+  .compass{
+    position:fixed;
+    top:calc(env(safe-area-inset-top) + 10px);
+    left:50%;transform:translateX(-50%);
+    width:160px;height:18px;
+    background:rgba(10,13,18,0.6);
+    border:1px solid rgba(212,200,150,0.3);
+    overflow:hidden;
+    z-index:29;
+    font-family:'Anton',sans-serif;
+    pointer-events:none;
+  }
+  .compass-strip{
+    position:absolute;
+    top:0;left:0;
+    height:100%;
+    color:var(--sand);
+    font-size:10px;
+    letter-spacing:0.2em;
+    white-space:nowrap;
+    will-change:transform;
+  }
+  .compass::before{
+    content:'';position:absolute;
+    top:100%;left:50%;
+    transform:translate(-50%, -1px) rotate(45deg);
+    width:6px;height:6px;
+    background:var(--gold);
+    margin-top:-3px;
+    z-index:2;
+  }
+
+  /* Scene */
+  #canvas{
+    position:absolute;
+    inset:0;
+    width:100%;height:100%;
+    display:block;
+  }
+
+  /* Scope overlay */
+  .scope-overlay{
+    position:absolute;inset:0;
+    pointer-events:none;
+    opacity:0;transition:opacity 0.25s;z-index:10;
+  }
+  .scope-overlay.on{opacity:1;}
+  .scope-mask{
+    position:absolute;inset:0;
+    background:radial-gradient(circle at center,
+      transparent 0%,transparent 38%,
+      rgba(4,6,10,0.5) 41%,rgba(4,6,10,0.95) 50%,#000 60%);
+  }
+  .scope-ring{
+    position:absolute;top:50%;left:50%;
+    width:78vmin;height:78vmin;
+    transform:translate(-50%,-50%);border-radius:50%;
+    border:2px solid #1a1c14;
+    box-shadow:inset 0 0 0 8px #04060a, inset 0 0 0 10px #2a2a1f, inset 0 0 70px rgba(0,0,0,0.7);
+  }
+  .scene-glass{
+    position:absolute;top:50%;left:50%;
+    width:78vmin;height:78vmin;transform:translate(-50%,-50%);
+    border-radius:50%;pointer-events:none;
+    background:
+      radial-gradient(circle at 30% 25%, rgba(255,255,255,0.05) 0%, transparent 25%),
+      radial-gradient(circle at center, transparent 60%, rgba(0,0,0,0.4) 100%);
+  }
+  .reticle{
+    position:absolute;top:50%;left:50%;
+    width:78vmin;height:78vmin;pointer-events:none;
+    transform:translate(-50%,-50%);
+  }
+  .reticle::before, .reticle::after{
+    content:'';position:absolute;background:rgba(20,25,15,0.9);
+  }
+  .reticle::before{top:50%;left:0;right:0;height:1px;transform:translateY(-50%);}
+  .reticle::after{left:50%;top:0;bottom:0;width:1px;transform:translateX(-50%);}
+  .reticle .gap{
+    position:absolute;top:50%;left:50%;
+    width:14px;height:14px;transform:translate(-50%,-50%);
+    border:1px solid rgba(20,25,15,0.7);border-radius:50%;
+  }
+  .reticle .tick{position:absolute;background:rgba(20,25,15,0.7);}
+  .reticle .tick.h{top:50%;width:8px;height:1px;transform:translateY(-50%);}
+  .reticle .tick.v{left:50%;width:1px;height:8px;transform:translateX(-50%);}
+
+  .scope-overlay.on .reticle{ animation:sway 4s ease-in-out infinite; }
+  .scope-overlay.on.steady .reticle{ animation:swaySteady 4s ease-in-out infinite; }
+  @keyframes sway{
+    0%,100%{transform:translate(calc(-50% + 7px), calc(-50% - 5px));}
+    25%{transform:translate(calc(-50% - 6px), calc(-50% + 7px));}
+    50%{transform:translate(calc(-50% + 8px), calc(-50% + 4px));}
+    75%{transform:translate(calc(-50% - 5px), calc(-50% - 7px));}
+  }
+  @keyframes swaySteady{
+    0%,100%{transform:translate(calc(-50% + 1px), calc(-50% - 1px));}
+    50%{transform:translate(calc(-50% - 1px), calc(-50% + 1px));}
+  }
+  .scope-readout{
+    position:absolute;bottom:14%;left:10%;right:10%;
+    display:flex;justify-content:space-between;
+    color:#8aa066;font-size:11px;letter-spacing:0.15em;
+    text-shadow:0 0 4px rgba(0,0,0,0.8);opacity:0.85;
+  }
+  .scope-readout .breath.holding{ color:#7ba05b; animation:pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse{50%{opacity:0.6;}}
+  .breath-bar-h{
+    position:absolute;bottom:7%;left:30%;right:30%;
+    height:3px;background:rgba(20,25,15,0.6);
+    border:1px solid rgba(212,200,150,0.3);overflow:hidden;
+  }
+  .breath-bar-h > span{
+    display:block;height:100%;
+    background:linear-gradient(90deg,#7ba05b,#d4c896,#a83c2a);
+    width:0%;transition:width 0.1s linear;
+  }
+
+  .crosshair-min{
+    position:absolute;top:50%;left:50%;
+    width:32px;height:32px;
+    transform:translate(-50%,-50%);
+    pointer-events:none;opacity:0.55;
+    transition:opacity 0.3s;z-index:9;
+  }
+  .crosshair-min.hidden{opacity:0;}
+  .crosshair-min::before, .crosshair-min::after{
+    content:'';position:absolute;background:var(--sand);
+  }
+  .crosshair-min::before{top:50%;left:0;right:0;height:1px;transform:translateY(-50%);}
+  .crosshair-min::after{left:50%;top:0;bottom:0;width:1px;transform:translateX(-50%);}
+  .crosshair-min .dot{
+    position:absolute;top:50%;left:50%;
+    width:4px;height:4px;background:var(--sand);
+    border-radius:50%;transform:translate(-50%,-50%);
+  }
+
+  /* Zoom slider */
+  .zoom-slider{
+    position:fixed;left:14px;top:50%;
+    transform:translateY(-50%);
+    width:34px;height:42vh;max-height:280px;z-index:28;
+    background:linear-gradient(180deg, rgba(10,13,18,0.85), rgba(10,13,18,0.6));
+    border:1px solid rgba(212,200,150,0.3);border-radius:18px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.5);
+    display:flex;flex-direction:column;align-items:center;
+    padding:8px 0;opacity:0.45;transition:opacity 0.25s;
+  }
+  .zoom-slider.active{opacity:1;}
+  .zoom-slider.disabled{opacity:0.2;pointer-events:none;}
+  .zoom-slider .zoom-label{
+    font-family:'Anton',sans-serif;font-size:10px;
+    color:var(--sand);letter-spacing:0.15em;margin-bottom:4px;
+  }
+  .zoom-slider .zoom-track{
+    flex:1;width:6px;
+    background:rgba(212,200,150,0.15);
+    border:1px solid rgba(212,200,150,0.25);
+    border-radius:3px;position:relative;margin:6px 0;
+  }
+  .zoom-slider .zoom-fill{
+    position:absolute;bottom:0;left:-1px;right:-1px;
+    background:linear-gradient(180deg, var(--sand), #8a7d4a);
+    border-radius:3px;height:30%;transition:height 0.06s linear;
+  }
+  .zoom-slider .zoom-knob{
+    position:absolute;bottom:30%;left:50%;
+    width:24px;height:8px;
+    background:linear-gradient(180deg, #6a7888, #2a3340);
+    border:1px solid rgba(212,200,150,0.6);border-radius:3px;
+    transform:translate(-50%, 50%);
+    box-shadow:0 2px 4px rgba(0,0,0,0.5);
+    transition:bottom 0.06s linear;
+  }
+  .zoom-slider .zoom-val{
+    font-family:'Anton',sans-serif;font-size:11px;
+    color:var(--sand);letter-spacing:0.1em;margin-top:4px;
+  }
+
+  /* Joysticks */
+  .stick-zone{position:fixed;bottom:0;width:50%;height:46%;z-index:25;}
+  .stick-zone.left{left:0;}
+  .stick-zone.right{right:0;}
+  .stick-base{
+    position:absolute;width:120px;height:120px;
+    border-radius:50%;
+    border:2px solid rgba(212,200,150,0.4);
+    background:radial-gradient(circle, rgba(10,13,18,0.6), rgba(10,13,18,0.85));
+    box-shadow:0 0 0 1px rgba(0,0,0,0.6), inset 0 0 20px rgba(0,0,0,0.5);
+    transform:translate(-50%,-50%);pointer-events:none;
+    opacity:0;transition:opacity 0.15s;
+  }
+  .stick-base.active{opacity:0.85;}
+  .stick-knob{
+    position:absolute;top:50%;left:50%;
+    width:54px;height:54px;border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #5a6878, #2a3340 70%, #1a2028);
+    border:1px solid rgba(212,200,150,0.5);
+    transform:translate(-50%,-50%);
+    box-shadow:0 2px 6px rgba(0,0,0,0.6), inset 0 -3px 0 rgba(0,0,0,0.3);
+    pointer-events:none;
+  }
+  .stick-hint{
+    position:absolute;bottom:12px;left:50%;
+    transform:translateX(-50%);
+    font-family:'Anton',sans-serif;font-size:9px;
+    color:rgba(212,200,150,0.45);
+    letter-spacing:0.25em;pointer-events:none;
+    text-align:center;white-space:nowrap;
+  }
+
+  /* Buttons */
+  .side-btn{
+    position:fixed;border:1px solid #1a2028;
+    color:var(--bone);font-family:'Anton',sans-serif;
+    font-size:11px;letter-spacing:0.15em;
+    cursor:pointer;z-index:26;
+    box-shadow:inset 0 -3px 0 rgba(0,0,0,0.4), 0 3px 0 var(--shadow);
+    transition:transform 0.06s, background 0.2s;
+  }
+  .side-btn:active{ transform:translateY(2px); box-shadow:inset 0 -1px 0 rgba(0,0,0,0.4), 0 1px 0 var(--shadow); }
+  .scope-btn{
+    bottom:calc(env(safe-area-inset-bottom) + 18px);
+    right:calc(50% + 12px);
+    min-width:60px;min-height:60px;
+    width:62px;height:60px;border-radius:10px;
+    background:radial-gradient(circle at 35% 35%, #4a5a6e, #2a3540 70%, #1a2028);
+  }
+  .scope-btn.active{
+    background:radial-gradient(circle at 35% 35%, #f0b429, #a87a14 70%, #6a4a08);
+    color:var(--shadow);
+    box-shadow:inset 0 -3px 0 rgba(0,0,0,0.3), 0 3px 0 #3a2a04, 0 0 16px rgba(240,180,41,0.4);
+  }
+  .fire-btn{
+    bottom:calc(env(safe-area-inset-bottom) + 18px);
+    left:calc(50% + 12px);
+    min-width:60px;min-height:60px;
+    width:62px;height:60px;border-radius:10px;
+    background:radial-gradient(circle at 30% 30%, #e85d4a, #a83c2a 60%, #6a1f15);
+    font-size:13px;
+  }
+  .fire-btn:disabled{ opacity:0.35; background:radial-gradient(circle, #444, #222); }
+  .reload-btn{
+    bottom:calc(env(safe-area-inset-bottom) + 90px);
+    left:calc(50% + 12px);
+    min-width:60px;min-height:60px;
+    width:62px;height:60px;border-radius:10px;
+    background:radial-gradient(circle at 35% 35%, #4a4030, #2a2418 70%, #1a1408);
+    font-size:10px;color:var(--sand);
+  }
+  .reload-btn:disabled{opacity:0.4;}
+  .reload-btn.reloading{
+    background:linear-gradient(90deg, var(--steel) var(--rp,0%), #2a2418 var(--rp,0%));
+    color:var(--bone);
+  }
+
+  /* Effects */
+  .flash{
+    position:absolute;inset:0;background:#fff;
+    opacity:0;pointer-events:none;z-index:15;
+  }
+  .flash.fire{ animation:flash 0.1s ease-out; }
+  @keyframes flash{ 0%{opacity:0.45;} 100%{opacity:0;} }
+  #canvas.recoil{ animation:recoil 0.18s ease-out; }
+  @keyframes recoil{ 0%{transform:translateY(0);} 30%{transform:translateY(-7px);} 100%{transform:translateY(0);} }
+
+  /* Hit feedback */
+  .hit-text{
+    position:fixed;
+    pointer-events:none;
+    font-family:'Anton',sans-serif;
+    font-size:24px;letter-spacing:0.15em;
+    text-shadow:0 0 12px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.9);
+    z-index:20;
+    transform:translate(-50%, -50%);
+    opacity:0;
+  }
+  .hit-text.show{
+    animation:hitFloat 0.9s ease-out forwards;
+  }
+  @keyframes hitFloat{
+    0%{opacity:0;transform:translate(-50%, -50%) scale(0.5);}
+    20%{opacity:1;transform:translate(-50%, -50%) scale(1.2);}
+    100%{opacity:0;transform:translate(-50%, -120%) scale(1);}
+  }
+
+  /* Loading */
+  .loading{
+    position:fixed;inset:0;
+    background:#0a0d12;
+    display:flex;align-items:center;justify-content:center;
+    flex-direction:column;
+    z-index:200;
+    color:var(--sand);
+    font-family:'Anton',sans-serif;
+    letter-spacing:0.2em;
+  }
+  .loading h1{
+    font-size:32px;color:var(--gold);
+    margin-bottom:14px;
+    text-shadow:0 0 16px rgba(240,180,41,0.4);
+  }
+  .loading .dots::after{
+    content:'';
+    animation:dots 1.5s infinite;
+  }
+  @keyframes dots{
+    0%{content:'';}
+    33%{content:'.';}
+    66%{content:'..';}
+    100%{content:'...';}
+  }
+
+  .overlay{
+    position:fixed;inset:0;
+    background:rgba(4,6,10,0.95);
+    backdrop-filter:blur(6px);
+    display:none;align-items:center;justify-content:center;
+    z-index:100;padding:24px;
+  }
+  .overlay.show{display:flex;}
+  .panel{
+    max-width:340px;width:100%;
+    background:linear-gradient(180deg, #161c26, #0a0d12);
+    border:1px solid var(--steel);
+    padding:28px 22px;text-align:left;
+    position:relative;
+  }
+  .panel::before{
+    content:'';position:absolute;
+    top:8px;left:8px;right:8px;bottom:8px;
+    border:1px solid rgba(212,200,150,0.12);pointer-events:none;
+  }
+  .panel h2{
+    font-family:'Anton',sans-serif;
+    font-size:24px;letter-spacing:0.15em;
+    color:var(--gold);margin-bottom:6px;
+    text-shadow:0 0 12px rgba(240,180,41,0.3);
+  }
+  .panel .sub{
+    font-family:'Special Elite',serif;
+    font-size:11px;color:var(--bone);
+    opacity:0.7;letter-spacing:0.1em;margin-bottom:16px;
+  }
+  .panel p{
+    font-size:13px;line-height:1.55;
+    color:var(--bone);margin-bottom:7px;letter-spacing:0.03em;
+  }
+  .panel .controls-help{
+    display:grid;grid-template-columns:auto 1fr;gap:6px 12px;
+    font-size:11px;line-height:1.4;
+    margin:14px 0;padding:10px;
+    background:rgba(58,68,82,0.18);
+    border-left:2px solid var(--steel);
+  }
+  .panel .controls-help b{
+    color:var(--sand);
+    font-family:'Anton',sans-serif;
+    letter-spacing:0.1em;
+  }
+  .panel button{
+    margin-top:14px;width:100%;padding:13px;
+    background:var(--gold);color:var(--shadow);
+    border:1px solid #1a2028;
+    font-family:'Anton',sans-serif;
+    font-size:13px;letter-spacing:0.25em;
+    cursor:pointer;
+    box-shadow:0 3px 0 var(--shadow);
+  }
+  .panel button:active{transform:translateY(2px);box-shadow:0 1px 0 var(--shadow);}
+
+  /* ─────── Dossier cards in brief ─────── */
+  .dossier-card{
+    display:flex;gap:10px;align-items:center;
+    padding:8px 10px;
+    background:rgba(168,60,42,0.08);
+    border:1px solid rgba(168,60,42,0.4);
+    border-left:3px solid var(--rust);
+  }
+  .dossier-card .icon{
+    width:36px;height:36px;
+    background:rgba(0,0,0,0.4);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Anton',sans-serif;
+    font-size:18px;color:var(--rust);
+    border:1px solid var(--rust);
+    flex-shrink:0;
+  }
+  .dossier-card .info{flex:1;min-width:0;}
+  .dossier-card .name{
+    font-family:'Anton',sans-serif;
+    font-size:13px;letter-spacing:0.1em;
+    color:var(--bone);
+  }
+  .dossier-card .real{
+    font-family:'Special Elite',serif;
+    font-size:10px;color:var(--sand);
+    opacity:0.7;letter-spacing:0.05em;
+  }
+  .dossier-card .bio{
+    font-size:10px;color:var(--bone);
+    opacity:0.7;line-height:1.35;margin-top:2px;
+  }
+  .dossier-card .bounty{
+    font-family:'Anton',sans-serif;
+    font-size:13px;color:var(--gold);
+    letter-spacing:0.1em;
+    flex-shrink:0;
+  }
+
+  /* ─────── Cinematic overlay ─────── */
+  .cine-overlay{
+    position:fixed;inset:0;
+    pointer-events:none;
+    z-index:90;
+    opacity:0;
+    transition:opacity 0.3s;
+  }
+  .cine-overlay.show{opacity:1;pointer-events:auto;}
+  .cine-bars .cine-bar{
+    position:absolute;left:0;right:0;
+    background:#000;
+    height:0;
+    transition:height 0.5s ease-out;
+  }
+  .cine-bars .cine-bar.top{top:0;}
+  .cine-bars .cine-bar.bottom{bottom:0;}
+  .cine-overlay.show .cine-bars .cine-bar{height:14vh;}
+  .cine-title{
+    position:absolute;
+    bottom:18vh;left:0;right:0;
+    text-align:center;
+    padding:0 20px;
+    color:var(--bone);
+    transform:translateY(20px);
+    opacity:0;
+    transition:transform 0.5s ease-out, opacity 0.5s ease-out;
+  }
+  .cine-overlay.show .cine-title{
+    transform:translateY(0);opacity:1;
+    transition-delay:0.3s;
+  }
+  .cine-label{
+    font-family:'Anton',sans-serif;
+    font-size:11px;letter-spacing:0.4em;
+    color:var(--rust);
+    margin-bottom:8px;
+  }
+  .cine-name{
+    font-family:'Anton',sans-serif;
+    font-size:36px;letter-spacing:0.18em;
+    color:var(--gold);
+    text-shadow:0 0 20px rgba(240,180,41,0.5), 0 4px 8px rgba(0,0,0,0.9);
+    margin-bottom:4px;
+  }
+  .cine-real{
+    font-family:'Special Elite',serif;
+    font-size:13px;color:var(--bone);
+    opacity:0.85;letter-spacing:0.1em;
+    margin-bottom:10px;
+  }
+  .cine-bio{
+    font-size:12px;line-height:1.5;
+    color:var(--bone);
+    opacity:0.85;
+    max-width:340px;margin:0 auto 10px;
+    letter-spacing:0.02em;
+  }
+  .cine-bounty{
+    font-family:'Anton',sans-serif;
+    font-size:18px;letter-spacing:0.15em;
+    color:var(--gold);
+  }
+  .cine-skip{
+    position:absolute;
+    top:calc(env(safe-area-inset-top) + 18px);
+    right:18px;
+    background:rgba(10,13,18,0.7);
+    border:1px solid rgba(212,200,150,0.4);
+    color:var(--sand);
+    font-family:'Anton',sans-serif;
+    font-size:11px;letter-spacing:0.2em;
+    padding:8px 14px;
+    cursor:pointer;
+    z-index:91;
+  }
+
+  /* ─────── Target labels (in-world projected) ─────── */
+  #targetLabels{
+    position:fixed;inset:0;
+    pointer-events:none;
+    z-index:8;
+    overflow:hidden;
+  }
+  .tgt-label{
+    position:absolute;
+    transform:translate(-50%, -100%);
+    pointer-events:none;
+    font-family:'Anton',sans-serif;
+    text-align:center;
+    text-shadow:0 1px 3px rgba(0,0,0,0.95);
+    white-space:nowrap;
+  }
+  .tgt-label .marker{
+    font-size:16px;
+    line-height:1;
+    margin-bottom:2px;
+  }
+  .tgt-label .name{
+    font-size:11px;letter-spacing:0.15em;
+    background:rgba(10,13,18,0.7);
+    padding:2px 6px;
+    border:1px solid currentColor;
+    display:inline-block;
+  }
+  .tgt-label .dist{
+    display:block;
+    font-size:9px;letter-spacing:0.1em;
+    opacity:0.7;
+    margin-top:2px;
+  }
+  .tgt-label.contract{ color: var(--rust); }
+  .tgt-label.soldier{ color: #c8b070; opacity:0.85; }
+  .tgt-label.militia{ color: #c8b070; opacity:0.85; }
+  .tgt-label.civilian{ color: #6abf7d; }
+  .tgt-label.drone{ color: #9ec5e8; opacity:0.85; }
+
+  /* off-screen indicator arrow toward contract targets */
+  .contract-arrow{
+    position:absolute;
+    width:24px;height:24px;
+    pointer-events:none;
+    transform:translate(-50%,-50%);
+    color:var(--rust);
+  }
+
+  /* ─────── Minimap (nest selector) ─────── */
+  .minimap{
+    position:fixed;
+    top:calc(env(safe-area-inset-top) + 50px);
+    right:14px;
+    width:170px;
+    background:rgba(10,13,18,0.85);
+    border:1px solid rgba(212,200,150,0.3);
+    border-radius:8px;
+    padding:6px 6px 4px;
+    z-index:27;
+    box-shadow:0 4px 12px rgba(0,0,0,0.5);
+  }
+  .minimap-label{
+    font-family:'Anton',sans-serif;
+    font-size:9px;letter-spacing:0.25em;
+    color:var(--sand);
+    text-align:center;
+    margin-bottom:4px;
+    opacity:0.7;
+  }
+  .minimap-canvas-wrap{
+    position:relative;
+    width:160px;height:160px;
+    background:rgba(0,0,0,0.4);
+    border:1px solid rgba(212,200,150,0.15);
+    cursor:pointer;
+  }
+  .minimap-hint{
+    position:absolute;
+    bottom:6px;left:50%;
+    transform:translateX(-50%);
+    font-family:'Anton',sans-serif;
+    font-size:8px;letter-spacing:0.2em;
+    color:var(--sand);
+    opacity:0.5;
+    pointer-events:none;
+    text-shadow:0 1px 2px rgba(0,0,0,0.9);
+  }
+  .minimap-current{
+    font-family:'Anton',sans-serif;
+    font-size:10px;letter-spacing:0.15em;
+    color:var(--gold);
+    text-align:center;
+    margin-top:4px;
+    text-shadow:0 0 6px rgba(240,180,41,0.4);
+  }
+
+  /* Fade transition for nest switching */
+  .fader{
+    position:fixed;inset:0;
+    background:#000;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.22s;
+    z-index:80;
+  }
+  .fader.show{opacity:1;pointer-events:auto;}
+
+  @media (max-height:700px){
+    .minimap{ width:140px; padding:5px 5px 3px; }
+    .minimap-canvas-wrap{ width:130px;height:130px; }
+    .minimap-canvas-wrap canvas{ width:130px;height:130px; }
+  }
+
+  /* FPS / tier diagnostic overlay */
+  .fps-readout{
+    position:fixed;
+    top:calc(env(safe-area-inset-top) + 50px);
+    right:14px;
+    font-family:'Anton',sans-serif;
+    font-size:14px;
+    color:var(--gold);
+    pointer-events:none;
+    z-index:50;
+    opacity:0.85;
+    text-shadow:0 1px 3px rgba(0,0,0,0.95);
+    letter-spacing:0.08em;
+  }
+</style>
+</head>
+<body>
+
+<div class="loading" id="loading">
+  <h1>SCOPE · 3D</h1>
+  <div class="sub" style="font-family:'Special Elite',serif;letter-spacing:0.15em;font-size:11px;opacity:0.7;">BUILDING THE CITY<span class="dots"></span></div>
+</div>
+
+<div class="hud">
+  <div class="hud-block">
+    <span class="label">TARGETS</span>
+    <span class="val" id="targetsLeft">0/0</span>
+  </div>
+  <div class="hud-block hud-right">
+    <span class="label">SCORE</span>
+    <span class="val" id="score">0</span>
+    <span class="ammo-line" id="ammoLine">8 / 24</span>
+  </div>
+</div>
+
+<div class="compass">
+  <div class="compass-strip" id="compassStrip"></div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<div class="crosshair-min" id="crosshairMin"><span class="dot"></span></div>
+
+<div class="scope-overlay" id="scope">
+  <div class="scope-mask"></div>
+  <div class="scope-ring"></div>
+  <div class="scene-glass"></div>
+  <div class="reticle">
+    <div class="gap"></div>
+    <div class="tick h" style="left:14%"></div>
+    <div class="tick h" style="right:14%"></div>
+    <div class="tick v" style="top:14%"></div>
+    <div class="tick v" style="bottom:14%"></div>
+  </div>
+  <div class="scope-readout">
+    <span id="zoomReadout">×3.0</span>
+    <span class="breath" id="breathLabel">BREATH</span>
+  </div>
+  <div class="breath-bar-h"><span id="breathFill"></span></div>
+</div>
+
+<div class="flash" id="flash"></div>
+<div class="fader" id="fader"></div>
+<div id="targetLabels"></div>
+<div class="fps-readout" id="fpsReadout">— FPS</div>
+
+<!-- Minimap -->
+<div class="minimap" id="minimap">
+  <div class="minimap-label">NESTS</div>
+  <div class="minimap-canvas-wrap">
+    <canvas id="minimapCanvas" width="160" height="160"></canvas>
+    <div class="minimap-hint" id="minimapHint">TAP A NEST</div>
+  </div>
+  <div class="minimap-current" id="minimapCurrent">— TOWER NORTH —</div>
+</div>
+
+<div class="zoom-slider disabled" id="zoomSlider">
+  <span class="zoom-label">ZOOM</span>
+  <div class="zoom-track" id="zoomTrack">
+    <div class="zoom-fill" id="zoomFill"></div>
+    <div class="zoom-knob" id="zoomKnob"></div>
+  </div>
+  <span class="zoom-val" id="zoomVal">3.0×</span>
+</div>
+
+<div class="stick-zone left" id="leftZone">
+  <div class="stick-base" id="leftBase"><div class="stick-knob" id="leftKnob"></div></div>
+  <div class="stick-hint">LOOK · 360°</div>
+</div>
+<div class="stick-zone right" id="rightZone">
+  <div class="stick-base" id="rightBase"><div class="stick-knob" id="rightKnob"></div></div>
+  <div class="stick-hint">FINE AIM</div>
+</div>
+
+<button class="side-btn scope-btn" id="scopeBtn">SCOPE</button>
+<button class="side-btn reload-btn" id="reloadBtn">RELOAD</button>
+<button class="side-btn fire-btn" id="fireBtn">FIRE</button>
+
+<div class="overlay" id="brief">
+  <div class="panel" style="max-width:380px;">
+    <h2>MISSION BRIEFING</h2>
+    <div class="sub">Rooftop · Op. Glasshouse</div>
+    <p style="font-size:12px;">Three high-value contracts in the district. Eliminate them. Side hostiles add bounty — but watch for civilians.</p>
+
+    <div id="dossierList" style="margin:14px 0;display:flex;flex-direction:column;gap:8px;"></div>
+
+    <details style="margin-top:8px;cursor:pointer;">
+      <summary style="font-family:'Anton',sans-serif;font-size:12px;letter-spacing:0.15em;color:var(--sand);padding:6px 0;">CONTROLS</summary>
+      <div class="controls-help">
+        <b>LEFT</b><span>Look around — 360°, up & down</span>
+        <b>RIGHT</b><span>Fine aim</span>
+        <b>SCOPE</b><span>Tap to zoom in/out</span>
+        <b>ZOOM BAR</b><span>Drag to change zoom (3×–10×)</span>
+        <b>FIRE</b><span>Tap any time</span>
+        <b>BREATH</b><span>Stay still for STEADY accuracy</span>
+      </div>
+    </details>
+
+    <div style="font-size:10px;opacity:0.6;margin-top:10px;line-height:1.4;letter-spacing:0.05em;">
+      Contract kills: full bounty · Headshots: ×1.5 · Side targets: $100 · Drones: $200<br>
+      <span style="color:var(--rust);">⚠ Civilians: −$200 penalty</span>
+    </div>
+
+    <button id="startBtn">BEGIN INTRO</button>
+  </div>
+</div>
+
+<!-- Cinematic intro overlay -->
+<div class="cine-overlay" id="cineOverlay">
+  <div class="cine-bars">
+    <div class="cine-bar top"></div>
+    <div class="cine-bar bottom"></div>
+  </div>
+  <div class="cine-title" id="cineTitle">
+    <div class="cine-label" id="cineLabel">TARGET 1 / 3</div>
+    <div class="cine-name" id="cineName">THE BANKER</div>
+    <div class="cine-real" id="cineReal">Marko Veldt</div>
+    <div class="cine-bio" id="cineBio">—</div>
+    <div class="cine-bounty" id="cineBounty">$0</div>
+  </div>
+  <button class="cine-skip" id="cineSkip">SKIP ▸</button>
+</div>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- Post-processing (cinematic-noir pipeline). cdnjs only mirrors three.min.js,
+     so we pull the example UMD scripts from unpkg. They attach to THREE.* -->
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/shaders/GammaCorrectionShader.js"></script>
+<script>
+(() => {
+  // Wait for THREE
+  if (typeof THREE === 'undefined') {
+    document.getElementById('loading').innerHTML = '<h1 style="color:#a83c2a">FAILED TO LOAD 3D ENGINE</h1><p style="font-size:12px;opacity:0.7;margin-top:14px;">Check your internet connection.</p>';
+    return;
+  }
+
+  // ─────── Three.js scene ───────
+  const canvas = document.getElementById('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference:'high-performance' });
+
+  // ─── Device tier detection (with ?tier=low|mid|high override) ───
+  const _tierOverride = new URLSearchParams(location.search).get('tier');
+  const DEVICE_TIER = (_tierOverride && ['low','mid','high'].includes(_tierOverride))
+    ? _tierOverride
+    : (() => {
+        const ua = navigator.userAgent;
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+        const cores = navigator.hardwareConcurrency || 4;
+        const mem = navigator.deviceMemory || 4;
+        if (!isMobile && cores >= 8) return 'high';
+        if (isMobile && (cores <= 4 || mem <= 3)) return 'low';
+        return 'mid';
+      })();
+  const TIER = {
+    low:  { pixelRatio: 1.0, skySeg: [10, 6], headSeg: 8,  shadowMap: false, fogFar: 240, throttleLabels: 6, throttleMini: 4 },
+    mid:  { pixelRatio: 1.25, skySeg: [16, 8], headSeg: 10, shadowMap: false, fogFar: 320, throttleLabels: 4, throttleMini: 3 },
+    high: { pixelRatio: 1.5, skySeg: [32,16], headSeg: 12, shadowMap: false, fogFar: 400, throttleLabels: 2, throttleMini: 2 },
+  }[DEVICE_TIER];
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, TIER.pixelRatio));
+  renderer.setClearColor(0x0a0d12);
+  // Defensive: ensure shadow map is OFF (we don't use it; some browsers/extensions
+  // can flip it on, which silently kills perf).
+  renderer.shadowMap.enabled = false;
+  // Cinematic noir tone mapping + sRGB output. The post-processing pipeline lifts
+  // highlights, so we keep exposure slightly under 1 to retain the dusk mood.
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.95;
+
+  // ─── Particle pool (shared geometry, recycled meshes) ───
+  const PARTICLE_GEO = new THREE.SphereGeometry(0.08, 4, 4);
+  const particlePool = [];
+  function getParticle(color){
+    let p = particlePool.pop();
+    if(!p){
+      p = new THREE.Mesh(PARTICLE_GEO, new THREE.MeshBasicMaterial({ color, transparent:true, opacity:1, fog:false }));
+    } else {
+      p.material.color.set(color);
+      p.material.opacity = 1;
+      p.visible = true;
+    }
+    return p;
+  }
+  function releaseParticle(p){
+    p.visible = false;
+    p.parent && p.parent.remove(p);
+    particlePool.push(p);
+  }
+
+  // ─── Dispose helpers — free GPU buffers / textures for removed meshes ───
+  // Skip shared materials (PARTICLE_GEO, sky, building textures) — they're
+  // pooled. We only call this on per-target geometries / materials we own.
+  function disposeMesh(root){
+    root.traverse(o => {
+      if(o.isMesh){
+        if(o.geometry) o.geometry.dispose();
+        if(o.material){
+          // Materials may be arrays (BoxGeometry can use one mat per face)
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          for(const m of mats){
+            // Don't dispose pooled / shared materials with cached textures
+            if(m.map && m.map._pooled) continue;
+            m.dispose && m.dispose();
+          }
+        }
+      }
+    });
+  }
+
+  // Handle context loss gracefully
+  canvas.addEventListener('webglcontextlost', e=>{
+    e.preventDefault();
+    console.warn('WebGL context lost — will restore');
+  });
+  canvas.addEventListener('webglcontextrestored', ()=>{
+    console.log('WebGL context restored');
+  });
+
+  const scene = new THREE.Scene();
+  // Cool desaturated grey-blue haze; starts closer & fades out earlier so the
+  // painterly fog reads thicker.
+  scene.fog = new THREE.Fog(0x2a2e34, 30, TIER.fogFar * 0.85);
+
+  // Camera setup
+  const FOV_NORMAL = 75;
+  const camera = new THREE.PerspectiveCamera(FOV_NORMAL, 1, 0.5, 2000);
+  // Player position on rooftop
+  camera.position.set(0, 60, 0);
+
+  // ─────── Lighting (dusk noir) ───────
+  // Amber low-angle sun, slightly weaker since post-processing lifts highlights.
+  const sunLight = new THREE.DirectionalLight(0xfca06b, 0.7);
+  sunLight.position.set(-30, 35, -50);
+  scene.add(sunLight);
+
+  // Cooler, slightly stronger ambient so the cool shadows aren't crushed.
+  const ambientLight = new THREE.AmbientLight(0x14202a, 0.85);
+  scene.add(ambientLight);
+
+  // Cool grey sky bounce vs near-black ground bounce.
+  const hemiLight = new THREE.HemisphereLight(0x6b7a85, 0x0a0e14, 0.35);
+  scene.add(hemiLight);
+
+  // ─────── Sky ───────
+  // Procedural sky gradient using a large sphere.
+  // Deep slate-blue zenith → smoky mid-horizon → dim warm haze near the ground.
+  const skyGeo = new THREE.SphereGeometry(1500, TIER.skySeg[0], TIER.skySeg[1]);
+  const skyMat = new THREE.ShaderMaterial({
+    uniforms: {
+      topColor: { value: new THREE.Color(0x111723) },
+      midColor: { value: new THREE.Color(0x4a4a52) },
+      bottomColor: { value: new THREE.Color(0x705a4a) },
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = wp.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 topColor;
+      uniform vec3 midColor;
+      uniform vec3 bottomColor;
+      varying vec3 vWorldPosition;
+      void main() {
+        float h = normalize(vWorldPosition).y;
+        vec3 col;
+        if (h > 0.0) {
+          col = mix(midColor, topColor, smoothstep(0.0, 0.7, h));
+        } else {
+          col = mix(midColor, bottomColor, smoothstep(0.0, -0.5, h));
+        }
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  scene.add(sky);
+
+  // ─────── Sun ───────
+  const sunGeo = new THREE.SphereGeometry(15, 16, 16);
+  const sunMat = new THREE.MeshBasicMaterial({ color: 0xffe49a, fog: false });
+  const sun = new THREE.Mesh(sunGeo, sunMat);
+  sun.position.copy(sunLight.position).normalize().multiplyScalar(900);
+  scene.add(sun);
+
+  // ─────── Sniper Nests (8 fixed positions) ───────
+  // Each nest: position (x,y,z), default yaw (radians, where 0 = facing -Z)
+  // Mix of rooftops and elevated ground positions (parking garages, scaffolds)
+  const NESTS = [
+    { name:'TOWER NORTH', x: 0,    y: 60,  z: 0,    yaw: Math.PI,    type:'roof' },
+    { name:'EAST RIDGE',  x: 70,   y: 50,  z: -30,  yaw: -Math.PI*0.7, type:'roof' },
+    { name:'SOUTH SPIRE', x: -20,  y: 75,  z: 75,   yaw: -Math.PI*0.05, type:'roof' },
+    { name:'WEST PERCH',  x: -85,  y: 55,  z: 10,   yaw: Math.PI*0.5,  type:'roof' },
+    { name:'GARAGE TOP',  x: 50,   y: 18,  z: 60,   yaw: -Math.PI*0.7, type:'garage' },
+    { name:'OVERPASS',    x: -55,  y: 12,  z: -55,  yaw: Math.PI*0.3,  type:'overpass' },
+    { name:'SCAFFOLD',    x: 80,   y: 28,  z: 35,   yaw: Math.PI*0.85, type:'scaffold' },
+    { name:'STREET CORNER', x: 25, y: 2,   z: -35,  yaw: Math.PI*0.95, type:'street' },
+  ];
+  let currentNestIdx = 0;
+
+  // ─────── Build nest platforms (3D meshes) ───────
+  const nestGroup = new THREE.Group();
+  scene.add(nestGroup);
+
+  const nestMaterials = {
+    concrete: new THREE.MeshLambertMaterial({ color: 0x4a4138 }),
+    edge: new THREE.MeshLambertMaterial({ color: 0x2a241c }),
+    wall: new THREE.MeshLambertMaterial({ color: 0x3a3028 }),
+    metal: new THREE.MeshLambertMaterial({ color: 0x5a5048 }),
+    pipe: new THREE.MeshLambertMaterial({ color: 0x4a4038 }),
+  };
+
+  function buildNestPlatform(nest){
+    const g = new THREE.Group();
+    g.position.set(nest.x, nest.y, nest.z);
+    const N = 6; // platform half-size
+
+    if(nest.type === 'roof'){
+      // Rooftop: large concrete pad with low ledges + AC unit + pipe
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(N*2, 0.3, N*2), nestMaterials.concrete);
+      g.add(pad);
+      // Building beneath
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(N*2.1, nest.y, N*2.1),
+        nestMaterials.wall
+      );
+      body.position.y = -nest.y/2 - 0.15;
+      g.add(body);
+      // Low ledges around 3 sides (leave one side open toward city)
+      const ledgeH = 0.6, ledgeT = 0.4;
+      [[N*2, ledgeH, ledgeT, 0, ledgeH/2, N],
+       [ledgeT, ledgeH, N*2, N, ledgeH/2, 0],
+       [ledgeT, ledgeH, N*2, -N, ledgeH/2, 0]].forEach(([w,h,d,x,y,z])=>{
+        g.add(makeLedge(w,h,d,x,y,z));
+      });
+      // AC unit
+      const ac = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.2, 1.8), new THREE.MeshLambertMaterial({color:0x6a6058}));
+      ac.position.set(-N+2.5, 0.6, -N+2);
+      g.add(ac);
+    } else if(nest.type === 'garage'){
+      // Multi-level parking garage top floor
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(N*2.5, 0.3, N*2.5), nestMaterials.concrete);
+      g.add(pad);
+      // Garage body
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(N*2.6, nest.y, N*2.6),
+        new THREE.MeshLambertMaterial({color:0x484038})
+      );
+      body.position.y = -nest.y/2 - 0.15;
+      g.add(body);
+      // Pillars on roof
+      [[-N+1, 0, -N+1], [N-1, 0, -N+1], [-N+1, 0, N-1], [N-1, 0, N-1]].forEach(([x,y,z])=>{
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2.5, 0.6), nestMaterials.metal);
+        p.position.set(x, y+1.25, z);
+        g.add(p);
+      });
+      // Painted lines on the roof surface
+    } else if(nest.type === 'overpass'){
+      // Highway overpass — long thin road segment
+      const road = new THREE.Mesh(new THREE.BoxGeometry(N*4, 0.4, N*1.4), nestMaterials.concrete);
+      g.add(road);
+      // Pillars below
+      [[-N*1.5, 0, 0], [0, 0, 0], [N*1.5, 0, 0]].forEach(([x,y,z])=>{
+        const p = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, nest.y, 8), nestMaterials.wall);
+        p.position.set(x, -nest.y/2 - 0.2, z);
+        g.add(p);
+      });
+      // Guardrails
+      const rail1 = new THREE.Mesh(new THREE.BoxGeometry(N*4, 0.5, 0.1), nestMaterials.metal);
+      rail1.position.set(0, 0.5, N*0.7);
+      g.add(rail1);
+      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(N*4, 0.5, 0.1), nestMaterials.metal);
+      rail2.position.set(0, 0.5, -N*0.7);
+      g.add(rail2);
+    } else if(nest.type === 'scaffold'){
+      // Construction scaffold — metal frame with wood plank floor
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(N*1.6, 0.2, N*1.6), new THREE.MeshLambertMaterial({color:0x6a4f30}));
+      g.add(plank);
+      // Vertical poles
+      const corners = [[-N*0.7,-N*0.7],[N*0.7,-N*0.7],[-N*0.7,N*0.7],[N*0.7,N*0.7]];
+      corners.forEach(([x,z])=>{
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, nest.y + 4, 6), nestMaterials.metal);
+        pole.position.set(x, -nest.y/2 + 2, z);
+        g.add(pole);
+        // Top extension above platform
+        const topExt = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2, 6), nestMaterials.metal);
+        topExt.position.set(x, 1, z);
+        g.add(topExt);
+      });
+      // Cross beams
+      const beams = [
+        [N*1.6, 0.1, 0.1, 0, 0.5, -N*0.7],
+        [N*1.6, 0.1, 0.1, 0, 0.5, N*0.7],
+        [0.1, 0.1, N*1.6, -N*0.7, 0.5, 0],
+        [0.1, 0.1, N*1.6, N*0.7, 0.5, 0],
+      ];
+      beams.forEach(([w,h,d,x,y,z])=>{
+        const b = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), nestMaterials.metal);
+        b.position.set(x,y,z);
+        g.add(b);
+      });
+    } else if(nest.type === 'street'){
+      // Street corner — concrete pad behind a low wall (like a checkpoint)
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(N*2, 0.2, N*2), nestMaterials.concrete);
+      g.add(pad);
+      // Low concrete barrier (T-wall style) front + sides
+      const barFront = new THREE.Mesh(new THREE.BoxGeometry(N*2, 1.4, 0.4), nestMaterials.wall);
+      barFront.position.set(0, 0.7, N*0.9);
+      g.add(barFront);
+      const barLeft = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.4, N*1.2), nestMaterials.wall);
+      barLeft.position.set(-N*0.9, 0.7, N*0.3);
+      g.add(barLeft);
+      const barRight = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.4, N*1.2), nestMaterials.wall);
+      barRight.position.set(N*0.9, 0.7, N*0.3);
+      g.add(barRight);
+      // Sandbags
+      for(let i=0;i<5;i++){
+        const sb = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, 0.4), new THREE.MeshLambertMaterial({color:0x6a5640}));
+        sb.position.set(-N*0.9 + i*0.65, 1.55, N*0.7);
+        g.add(sb);
+      }
+    }
+
+    // Mark whole nest as non-shootable
+    g.traverse(o=>{ o.userData.noShoot = true; });
+    nestGroup.add(g);
+    return g;
+  }
+
+  function makeLedge(w, h, d, x, y, z){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), nestMaterials.edge);
+    m.position.set(x, y, z);
+    return m;
+  }
+
+  // Build all 8 nest platforms once
+  NESTS.forEach(buildNestPlatform);
+
+  // Place camera at first nest
+  function setNest(idx, smooth=false){
+    currentNestIdx = idx;
+    const n = NESTS[idx];
+    if(smooth){
+      // simple fade transition handled by CSS overlay
+      const fader = document.getElementById('fader');
+      fader.classList.add('show');
+      setTimeout(()=>{
+        camera.position.set(n.x, n.y + 1.7, n.z);
+        state.yaw = n.yaw;
+        state.pitch = 0;
+        // brief flash
+        setTimeout(()=>{
+          fader.classList.remove('show');
+        }, 60);
+      }, 220);
+    } else {
+      camera.position.set(n.x, n.y + 1.7, n.z);
+      state.yaw = n.yaw;
+      state.pitch = 0;
+    }
+    updateMinimap();
+  }
+
+  // ─────── First-person rifle (attached to camera) ───────
+  const rifle = new THREE.Group();
+  // Rifle body (stock + receiver)
+  const stockMat = new THREE.MeshLambertMaterial({ color: 0x2a1f14 });
+  const metalMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const darkMetalMat = new THREE.MeshLambertMaterial({ color: 0x0a0a0a });
+  const accentMat = new THREE.MeshLambertMaterial({ color: 0x3a3530 });
+
+  // Receiver / main body
+  const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.4), metalMat);
+  receiver.position.set(0, -0.08, -0.35);
+  rifle.add(receiver);
+  // Stock (back of gun)
+  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.10, 0.18), stockMat);
+  stock.position.set(0, -0.10, -0.05);
+  rifle.add(stock);
+  // Cheek rest
+  const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.10), stockMat);
+  cheek.position.set(0, -0.04, -0.10);
+  rifle.add(cheek);
+  // Barrel (long thin cylinder)
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.6, 8), darkMetalMat);
+  barrel.rotation.x = Math.PI/2;
+  barrel.position.set(0, -0.07, -0.85);
+  rifle.add(barrel);
+  // Barrel tip / muzzle
+  const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.05, 8), darkMetalMat);
+  muzzle.rotation.x = Math.PI/2;
+  muzzle.position.set(0, -0.07, -1.17);
+  rifle.add(muzzle);
+  // Scope (mounted on top)
+  const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 12), darkMetalMat);
+  scopeBody.rotation.x = Math.PI/2;
+  scopeBody.position.set(0, -0.025, -0.40);
+  rifle.add(scopeBody);
+  // Scope lens (front)
+  const lensFront = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.02, 12), accentMat);
+  lensFront.rotation.x = Math.PI/2;
+  lensFront.position.set(0, -0.025, -0.52);
+  rifle.add(lensFront);
+  // Scope eyepiece (back)
+  const lensBack = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.02, 12), accentMat);
+  lensBack.rotation.x = Math.PI/2;
+  lensBack.position.set(0, -0.025, -0.28);
+  rifle.add(lensBack);
+  // Scope mount
+  const mount1 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.04), metalMat);
+  mount1.position.set(0, -0.06, -0.35);
+  rifle.add(mount1);
+  const mount2 = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.025, 0.04), metalMat);
+  mount2.position.set(0, -0.06, -0.45);
+  rifle.add(mount2);
+  // Magazine (sticking down)
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.10, 0.06), accentMat);
+  mag.position.set(0, -0.18, -0.30);
+  rifle.add(mag);
+  // Trigger guard
+  const guard = new THREE.Mesh(new THREE.TorusGeometry(0.025, 0.005, 6, 12, Math.PI), metalMat);
+  guard.rotation.x = Math.PI/2;
+  guard.rotation.z = Math.PI;
+  guard.position.set(0, -0.13, -0.22);
+  rifle.add(guard);
+  // Bipod/foregrip
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.06), stockMat);
+  grip.position.set(0, -0.14, -0.20);
+  rifle.add(grip);
+  // Front sight
+  const fSight = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.04, 0.02), darkMetalMat);
+  fSight.position.set(0, -0.02, -1.0);
+  rifle.add(fSight);
+
+  // Position the rifle so it appears in lower-right of screen
+  rifle.position.set(0.18, -0.16, 0);
+  rifle.rotation.y = -0.06;
+  // Make sure rifle doesn't get raycast as a target
+  rifle.traverse(o=>{ o.userData.noShoot = true; });
+  // Attach rifle to camera
+  camera.add(rifle);
+  scene.add(camera); // camera must be in scene for its children to render
+
+  // Rifle visibility & animation state
+  let rifleTargetPos = { x: 0.18, y: -0.16, z: 0 };
+  let rifleCurrentPos = { x: 0.18, y: -0.16, z: 0 };
+  let rifleRecoilOffset = 0;
+
+  // ─────── City: ring of buildings around the player ───────
+  const cityGroup = new THREE.Group();
+  scene.add(cityGroup);
+
+  const buildingPositions = []; // for spawning targets later
+
+  function rand(a,b){ return a + Math.random()*(b-a); }
+
+  // Generate buildings in concentric rings, leaving sight-lines
+  function buildCity(){
+    const colors = [0x3a4452, 0x4a4038, 0x2a3540, 0x4e3a30, 0x3a3a45, 0x554a40, 0x383848];
+
+    // ─── Shared per-color material pool ───
+    // One MeshLambertMaterial per baseColor (with windows baked into the texture).
+    // BoxGeometry face order: +x, -x, +y, -y, +z, -z. Top/bottom share too.
+    const materialPool = new Map();
+    const sharedTopMat = new THREE.MeshLambertMaterial({ color: 0x1a1a20 });
+    const sharedBottomMat = new THREE.MeshLambertMaterial({ color: 0x0a0a10 });
+    function getBuildingMaterials(baseColor){
+      let entry = materialPool.get(baseColor);
+      if(entry) return entry;
+      const tex = makeWindowTexture(0, 0, baseColor); // dimensions ignored — shared per color
+      const wallMat = new THREE.MeshLambertMaterial({ map: tex });
+      // Same material can appear in all four side slots
+      entry = [wallMat, wallMat, sharedTopMat, sharedBottomMat, wallMat, wallMat];
+      materialPool.set(baseColor, entry);
+      return entry;
+    }
+
+    // 3 rings (reduced again from 14/18/22 → 10/14/18 — fewer draw calls,
+    // still plenty of skyline silhouette since outer ring distances are large)
+    const rings = [
+      { count: 10, rDist: 70, hMin: 30, hMax: 80, wMin: 10, wMax: 16 },
+      { count: 14, rDist: 130, hMin: 40, hMax: 110, wMin: 12, wMax: 20 },
+      { count: 18, rDist: 200, hMin: 50, hMax: 140, wMin: 14, wMax: 24 },
+    ];
+
+    rings.forEach(ring=>{
+      for(let i=0;i<ring.count;i++){
+        const angle = (i/ring.count) * Math.PI * 2 + rand(-0.08, 0.08);
+        const dist = ring.rDist + rand(-10, 10);
+        const x = Math.cos(angle) * dist;
+        const z = Math.sin(angle) * dist;
+
+        // Skip if too close to any nest (avoid building inside a nest)
+        let tooClose = false;
+        for(const n of NESTS){
+          if(Math.hypot(n.x - x, n.z - z) < 18) { tooClose = true; break; }
+        }
+        if(tooClose) continue;
+
+        const w = rand(ring.wMin, ring.wMax);
+        const d = rand(ring.wMin, ring.wMax);
+        const h = rand(ring.hMin, ring.hMax);
+        const color = colors[Math.floor(Math.random()*colors.length)];
+
+        // Reuse shared materials per baseColor (drops 324+ → ~4-7)
+        const materials = getBuildingMaterials(color);
+
+        const bldg = new THREE.Mesh(
+          new THREE.BoxGeometry(w, h, d),
+          materials
+        );
+        bldg.position.set(x, h/2, z);
+        cityGroup.add(bldg);
+
+        buildingPositions.push({ x, z, w, d, h, top: h });
+      }
+    });
+  }
+
+  // Cache textures by base color to reuse across all buildings
+  const textureCache = new Map();
+  function makeWindowTexture(faceW, faceH, baseColor){
+    // Cache strictly by baseColor — one texture per color, reused across all faces
+    const key = baseColor;
+    if(textureCache.has(key)) return textureCache.get(key);
+
+    const canv = document.createElement('canvas');
+    canv.width = 128; canv.height = 256;
+    const ctx2 = canv.getContext('2d');
+    // base color
+    ctx2.fillStyle = '#' + baseColor.toString(16).padStart(6,'0');
+    ctx2.fillRect(0,0,canv.width,canv.height);
+    // subtle noise
+    for(let i=0;i<200;i++){
+      ctx2.fillStyle = `rgba(0,0,0,${Math.random()*0.08})`;
+      ctx2.fillRect(Math.random()*canv.width, Math.random()*canv.height, 1, 1);
+    }
+    // windows grid — fixed grid since texture is now shared
+    const cols = 5;
+    const rows = 12;
+    const cellW = canv.width / cols;
+    const cellH = canv.height / rows;
+    const winW = cellW * 0.55;
+    const winH = cellH * 0.65;
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const lit = Math.random() < 0.55;
+        const x = c*cellW + (cellW-winW)/2;
+        const y = r*cellH + (cellH-winH)/2;
+        if(lit){
+          // warm window glow
+          const tones = ['#ffe49a', '#ffd070', '#ffc55a', '#ffe89c', '#ffaa55'];
+          ctx2.fillStyle = tones[Math.floor(Math.random()*tones.length)];
+          ctx2.fillRect(x, y, winW, winH);
+          // window frame
+          ctx2.fillStyle = 'rgba(0,0,0,0.4)';
+          ctx2.fillRect(x, y, winW, 1);
+          ctx2.fillRect(x, y+winH-1, winW, 1);
+          ctx2.fillRect(x+winW/2-0.5, y, 1, winH);
+        } else {
+          // dark window
+          ctx2.fillStyle = '#0a0a14';
+          ctx2.fillRect(x, y, winW, winH);
+        }
+      }
+    }
+    // edge shadow
+    const grad = ctx2.createLinearGradient(0, canv.height-20, 0, canv.height);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx2.fillStyle = grad;
+    ctx2.fillRect(0, canv.height-20, canv.width, 20);
+
+    const tex = new THREE.CanvasTexture(canv);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.NearestFilter;
+    tex.anisotropy = 2;
+    textureCache.set(key, tex);
+    return tex;
+  }
+
+  // ─────── Ground ───────
+  const groundGeo = new THREE.PlaneGeometry(2000, 2000);
+  // Very dark, almost black — lets the dusk fog and silhouettes pop.
+  const groundMat = new THREE.MeshLambertMaterial({ color: 0x1a1d20 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = 0;
+  scene.add(ground);
+
+  // Streets — simple grid lines
+  const streetMat = new THREE.MeshBasicMaterial({ color: 0x1a1610 });
+  for(let i=-4; i<=4; i++){
+    const v = new THREE.Mesh(new THREE.PlaneGeometry(8, 800), streetMat);
+    v.rotation.x = -Math.PI/2;
+    v.position.set(i*60, 0.05, 0);
+    scene.add(v);
+    const h = new THREE.Mesh(new THREE.PlaneGeometry(800, 8), streetMat);
+    h.rotation.x = -Math.PI/2;
+    h.position.set(0, 0.05, i*60);
+    scene.add(h);
+  }
+
+  buildCity();
+
+  // ─────── Targets ───────
+  // Target types: rooftop (on building tops), window, ground, drone (flying)
+  const targets = []; // {mesh, type, alive, hp, hitBox, bounty, headBox}
+  // Hitables cache — declared early so spawnTargets() can flag dirty on init
+  let hitablesCache = null;
+  let hitablesDirty = true;
+
+  function makeHumanoid(skinColor, clothColor, helmetColor, look = {}){
+    const g = new THREE.Group();
+    // body
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 2, 0.6),
+      new THREE.MeshLambertMaterial({color: clothColor})
+    );
+    body.position.y = 1;
+    g.add(body);
+
+    // VIP touch: tie / sash detail
+    if(look.isVip){
+      const tie = new THREE.Mesh(
+        new THREE.BoxGeometry(0.2, 1.2, 0.05),
+        new THREE.MeshLambertMaterial({color: 0xa83c2a})
+      );
+      tie.position.set(0, 1.2, 0.32);
+      g.add(tie);
+    }
+
+    // head
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.45, TIER.headSeg, TIER.headSeg),
+      new THREE.MeshLambertMaterial({color: skinColor})
+    );
+    head.position.y = 2.4;
+    head.name = 'head';
+    g.add(head);
+
+    // helmet (optional — civilians have none)
+    if(helmetColor !== null){
+      const helmet = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, TIER.headSeg, TIER.headSeg, 0, Math.PI*2, 0, Math.PI/2.2),
+        new THREE.MeshLambertMaterial({color: helmetColor})
+      );
+      helmet.position.y = 2.55;
+      g.add(helmet);
+    } else {
+      // hair tuft for civilians
+      const hair = new THREE.Mesh(
+        new THREE.SphereGeometry(0.42, 8, 8),
+        new THREE.MeshLambertMaterial({color: 0x2a1a14})
+      );
+      hair.position.y = 2.55;
+      hair.scale.set(1.05, 0.6, 1.05);
+      g.add(hair);
+    }
+
+    // legs
+    const legs = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 0.5, 0.6),
+      new THREE.MeshLambertMaterial({color: 0x1a1a1a})
+    );
+    legs.position.y = 0.25;
+    g.add(legs);
+
+    // weapon — bigger if hasRifle (sniper), small pistol if VIP, normal otherwise
+    if(look.hasRifle){
+      // long sniper rifle
+      const rifle = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.18, 2.2),
+        new THREE.MeshLambertMaterial({color: 0x0a0a0a})
+      );
+      rifle.position.set(0.6, 1.3, 0.3);
+      g.add(rifle);
+      const scope = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.08, 0.4, 8),
+        new THREE.MeshLambertMaterial({color: 0x1a1a1a})
+      );
+      scope.rotation.x = Math.PI/2;
+      scope.position.set(0.6, 1.4, 0.3);
+      g.add(scope);
+    } else if(!look.isVip){
+      // standard rifle
+      const weapon = new THREE.Mesh(
+        new THREE.BoxGeometry(0.18, 0.18, 1.4),
+        new THREE.MeshLambertMaterial({color: 0x0a0a0a})
+      );
+      weapon.position.set(0.6, 1.2, 0.4);
+      g.add(weapon);
+    }
+    // VIPs are unarmed (more obvious as targets)
+
+    g.userData.headRef = head;
+    g.userData.bodyRef = body;
+    return g;
+  }
+
+  function makeDrone(){
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(0.5, 10, 10),
+      new THREE.MeshLambertMaterial({color: 0x2a2520})
+    );
+    g.add(body);
+    // arms
+    const armMat = new THREE.MeshLambertMaterial({color: 0x1a1610});
+    const arm1 = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.15), armMat);
+    g.add(arm1);
+    const arm2 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 2.4), armMat);
+    g.add(arm2);
+    // rotors
+    const rotorMat = new THREE.MeshBasicMaterial({color: 0xa89968, transparent: true, opacity: 0.4});
+    const rotorsArray = [];
+    [[1.2,0,0],[-1.2,0,0],[0,0,1.2],[0,0,-1.2]].forEach(([x,y,z])=>{
+      const r = new THREE.Mesh(new THREE.CircleGeometry(0.45, 8), rotorMat);
+      r.rotation.x = -Math.PI/2;
+      r.position.set(x,0.1,z);
+      g.add(r);
+      rotorsArray.push(r);
+    });
+    // red light
+    const light = new THREE.Mesh(new THREE.SphereGeometry(0.08), new THREE.MeshBasicMaterial({color: 0xff4030}));
+    light.position.set(0, -0.3, 0);
+    g.add(light);
+
+    g.userData.headRef = body; // drones don't have heads
+    g.userData.bodyRef = body;
+    g.userData.rotors = rotorsArray;
+    return g;
+  }
+
+  // ─────── Contract definitions ───────
+  const CONTRACTS = [
+    {
+      alias: 'THE BANKER',
+      real: 'Marko Veldt',
+      bio: 'Laundering cartel funds through offshore accounts. Always smoking on his rooftop terrace.',
+      bounty: 1500,
+      type: 'rooftop',
+      look: { skin: 0xc4a47a, cloth: 0x3a2418, helmet: 0x1a1a1a, isVip: true },
+    },
+    {
+      alias: 'THE COURIER',
+      real: 'Lin "Quiet" Hao',
+      bio: 'Carrying encryption keys to the next handler. Moves on foot through the alleys.',
+      bounty: 2000,
+      type: 'ground',
+      look: { skin: 0xa88860, cloth: 0x2a3540, helmet: 0x4a4030, isVip: true },
+    },
+    {
+      alias: 'THE GHOST',
+      real: 'Unknown',
+      bio: 'A rival sniper. Patrolling the rooftops looking for you.',
+      bounty: 3500,
+      type: 'rooftop',
+      look: { skin: 0x8b6f47, cloth: 0x1a1a1a, helmet: 0x2a2520, isVip: false, hasRifle: true },
+    },
+  ];
+
+  const TARGET_TYPES = {
+    soldier: { skin: 0x8b6f47, cloth: 0x3a4a2a, helmet: 0x1a1c14, label: 'GUARD' },
+    civilian: { skin: 0xc4a47a, cloth: 0x6a5040, helmet: null, label: 'CIVILIAN' },
+    militia: { skin: 0x9a7a55, cloth: 0x5a3a2a, helmet: 0x2a2520, label: 'MILITIA' },
+  };
+
+  function spawnTargets(){
+    // Spawn 3 named contract targets first, then ~9 generic enemies
+    // Reset list
+    targets.length = 0;
+
+    const usedRooftopBldgs = new Set();
+    const rooftopBldgs = buildingPositions.filter(b=>b.h > 30 && b.h < 90);
+
+    // Helper: place humanoid at a random clear rooftop
+    function placeOnRooftop(look, bonus={}) {
+      let b, tries = 0;
+      do {
+        b = rooftopBldgs[Math.floor(Math.random()*rooftopBldgs.length)];
+        tries++;
+      } while(usedRooftopBldgs.has(b) && tries < 20);
+      usedRooftopBldgs.add(b);
+      const human = makeHumanoid(look.skin, look.cloth, look.helmet, look);
+      human.position.set(
+        b.x + rand(-b.w/2 + 1, b.w/2 - 1),
+        b.top,
+        b.z + rand(-b.d/2 + 1, b.d/2 - 1)
+      );
+      human.rotation.y = rand(0, Math.PI*2);
+      scene.add(human);
+      return { mesh: human, type: 'rooftop', bldg: b, ...bonus };
+    }
+
+    function placeOnGround(look, bonus={}) {
+      const angle = rand(0, Math.PI*2);
+      const dist = rand(40, 90);
+      const human = makeHumanoid(look.skin, look.cloth, look.helmet, look);
+      human.position.set(Math.cos(angle)*dist, 0, Math.sin(angle)*dist);
+      human.rotation.y = rand(0, Math.PI*2);
+      scene.add(human);
+      return { mesh: human, type: 'ground', ...bonus };
+    }
+
+    // Place contracts
+    CONTRACTS.forEach((c, idx) => {
+      let placed;
+      if(c.type === 'rooftop') placed = placeOnRooftop(c.look);
+      else placed = placeOnGround(c.look);
+
+      targets.push({
+        ...placed,
+        alive: true,
+        bounty: c.bounty,
+        moveBase: { x: placed.mesh.position.x, z: placed.mesh.position.z },
+        moveT: rand(0, Math.PI*2),
+        moveSpeed: rand(0.3, 0.6),
+        moveRange: c.type === 'ground' ? rand(2, 4) : rand(0, 1.5),
+        moveType: 'patrol',
+        isContract: true,
+        contractIdx: idx,
+        alias: c.alias,
+        kindLabel: c.alias,
+      });
+    });
+
+    // Generic guards / soldiers / civilians
+    const genericTypes = ['soldier','soldier','soldier','militia','civilian'];
+
+    // 3 more rooftop generics
+    for(let i=0;i<3;i++){
+      const tk = genericTypes[Math.floor(Math.random()*genericTypes.length)];
+      const look = TARGET_TYPES[tk];
+      const placed = placeOnRooftop(look);
+      targets.push({
+        ...placed,
+        alive: true,
+        bounty: tk === 'civilian' ? -200 : 100, // penalty for civilians
+        moveBase: { x: placed.mesh.position.x, z: placed.mesh.position.z },
+        moveT: rand(0, Math.PI*2),
+        moveSpeed: rand(0.3, 0.7),
+        moveRange: rand(0, 2),
+        moveType: Math.random() < 0.4 ? 'patrol' : 'static',
+        isContract: false,
+        kindLabel: look.label,
+        targetKind: tk,
+      });
+    }
+
+    // 3 ground generics
+    for(let i=0;i<3;i++){
+      const tk = genericTypes[Math.floor(Math.random()*genericTypes.length)];
+      const look = TARGET_TYPES[tk];
+      const placed = placeOnGround(look);
+      targets.push({
+        ...placed,
+        alive: true,
+        bounty: tk === 'civilian' ? -200 : 100,
+        moveBase: { x: placed.mesh.position.x, z: placed.mesh.position.z },
+        moveT: rand(0, Math.PI*2),
+        moveSpeed: rand(0.4, 0.8),
+        moveRange: rand(2, 5),
+        moveType: 'patrol',
+        isContract: false,
+        kindLabel: look.label,
+        targetKind: tk,
+      });
+    }
+
+    // 3 drones
+    for(let i=0;i<3;i++){
+      const angle = rand(0, Math.PI*2);
+      const dist = rand(50, 110);
+      const drone = makeDrone();
+      drone.position.set(Math.cos(angle)*dist, rand(40, 90), Math.sin(angle)*dist);
+      scene.add(drone);
+      targets.push({
+        mesh: drone,
+        type: 'drone',
+        alive: true,
+        bounty: 200,
+        moveBase: { x: drone.position.x, z: drone.position.z, y: drone.position.y },
+        moveT: rand(0, Math.PI*2),
+        moveSpeed: rand(0.4, 0.8),
+        moveRange: rand(8, 18),
+        moveType: 'fly',
+        isContract: false,
+        kindLabel: 'DRONE',
+        targetKind: 'drone',
+      });
+    }
+
+    // New target set — force rebuild on next fire
+    hitablesDirty = true;
+  }
+
+  spawnTargets();
+
+  // ─────── Game state ───────
+  const state = {
+    isScoped: false,
+    breathHold: 0,
+    ammo: 8, magSize: 8, reserveAmmo: 24,
+    reloading: false, reloadStart: 0, reloadDuration: 1100,
+    score: 0,
+    kills: 0,
+    headshots: 0,
+    yaw: 0,    // horizontal radians
+    pitch: 0,  // vertical radians
+    zoom: 3.0, // 3..10
+    gameplayActive: false,
+  };
+  // Cinematic intro flags (declared early so the loop can reference them safely)
+  let cineActive = false;
+  let cineSkipped = false;
+  // Label pool for in-world labels (declared early; populated lazily)
+  const labelPool = [];
+  let labelsContainer = null; // assigned later when DOM is ready
+  // Minimap canvas refs — assigned later, but declared early so functions called during init don't TDZ
+  let miniCanvas = null;
+  let miniCtx = null;
+  const MINI_SCALE = 0.32;
+  const ZOOM_MIN = 3.0, ZOOM_MAX = 10.0;
+
+  // ─────── Cinematic-noir post-processing pipeline ───────
+  // 1) RenderPass — base scene
+  // 2) UnrealBloomPass — highlights only (sun, hit fx, rim light)
+  // 3) NoirShader — split-tone color grade + vignette + grain + chromatic aberration
+  const NoirShader = {
+    uniforms: {
+      tDiffuse:      { value: null },
+      time:          { value: 0 },
+      vignette:      { value: 1.15 },
+      grain:         { value: 0.045 },
+      aberration:    { value: 0.0014 },
+      shadowTint:    { value: new THREE.Color(0x1a2a2c) },
+      highlightTint: { value: new THREE.Color(0xffe1b8) },
+      saturation:    { value: 0.78 },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `,
+    fragmentShader: `
+      uniform sampler2D tDiffuse;
+      uniform float time, vignette, grain, aberration, saturation;
+      uniform vec3 shadowTint, highlightTint;
+      varying vec2 vUv;
+
+      // simple cheap PRNG
+      float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
+
+      void main(){
+        // chromatic aberration — sample R/G/B with slight offsets toward edge
+        vec2 c = vUv - 0.5;
+        float d = length(c);
+        vec2 ofs = c * d * aberration;
+        float r = texture2D(tDiffuse, vUv + ofs).r;
+        float g = texture2D(tDiffuse, vUv).g;
+        float b = texture2D(tDiffuse, vUv - ofs).b;
+        vec3 col = vec3(r, g, b);
+
+        // luma-based split toning: mix shadow tint into dark, highlight tint into bright
+        float luma = dot(col, vec3(0.299, 0.587, 0.114));
+        vec3 tinted = mix(col * shadowTint * 1.4, col * highlightTint, smoothstep(0.0, 0.85, luma));
+        col = mix(col, tinted, 0.65);
+
+        // saturation pull
+        vec3 grey = vec3(luma);
+        col = mix(grey, col, saturation);
+
+        // vignette — soft radial darken
+        float v = smoothstep(0.85, 0.25, d);
+        col *= mix(1.0, v, vignette * 0.55);
+
+        // film grain — add cheap noise scaled by darkness (more visible in shadows)
+        float n = (hash(vUv * 800.0 + time) - 0.5) * grain * (0.4 + (1.0 - luma));
+        col += n;
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  };
+
+  const composer = new THREE.EffectComposer(renderer);
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.addPass(new THREE.RenderPass(scene, camera));
+
+  const bloom = new THREE.UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.55, // strength
+    0.55, // radius
+    0.85, // threshold — only the brightest pixels bloom
+  );
+  // Bloom doubles fragment work; skip on low-tier devices
+  if (DEVICE_TIER !== 'low') composer.addPass(bloom);
+
+  const noirPass = new THREE.ShaderPass(NoirShader);
+  composer.addPass(noirPass);
+
+  // Final pass: linear → sRGB. Without this, EffectComposer in r128 leaves
+  // colors washed-out because intermediate targets are linear and the
+  // renderer's sRGB conversion is bypassed.
+  composer.addPass(new THREE.ShaderPass(THREE.GammaCorrectionShader));
+
+  // ─────── Sizing ───────
+  function resize(){
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    composer.setSize(w, h);
+    bloom.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ─────── Joysticks ───────
+  let lookInput = {x:0, y:0};
+  let aimInput = {x:0, y:0};
+
+  function setupStick(zoneId, baseId, knobId, onChange){
+    const zone = document.getElementById(zoneId);
+    const base = document.getElementById(baseId);
+    const knob = document.getElementById(knobId);
+    let activeId = null, center = null;
+    const radius = 50;
+
+    function start(id, x, y){
+      activeId = id; center = {x, y};
+      base.style.left = x+'px'; base.style.top = y+'px';
+      base.classList.add('active');
+      knob.style.transform = 'translate(-50%,-50%)';
+      onChange(0,0);
+    }
+    function move(x,y){
+      if(activeId===null) return;
+      let dx = x - center.x, dy = y - center.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if(dist > radius){ dx = dx/dist * radius; dy = dy/dist * radius; }
+      knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      onChange(dx/radius, dy/radius);
+    }
+    function end(){
+      activeId = null;
+      base.classList.remove('active');
+      knob.style.transform = 'translate(-50%,-50%)';
+      onChange(0,0);
+    }
+
+    zone.addEventListener('touchstart', e=>{
+      if(activeId!==null) return;
+      const t = e.changedTouches[0];
+      e.preventDefault();
+      start(t.identifier, t.clientX, t.clientY);
+    }, {passive:false});
+    window.addEventListener('touchmove', e=>{
+      if(activeId===null) return;
+      for(const t of e.changedTouches){
+        if(t.identifier === activeId){ e.preventDefault(); move(t.clientX, t.clientY); }
+      }
+    }, {passive:false});
+    function onEnd(e){
+      if(activeId===null) return;
+      for(const t of e.changedTouches){
+        if(t.identifier === activeId){ end(); }
+      }
+    }
+    window.addEventListener('touchend', onEnd, {passive:false});
+    window.addEventListener('touchcancel', onEnd, {passive:false});
+    zone.addEventListener('mousedown', e=>{
+      if(activeId!==null) return;
+      start('mouse', e.clientX, e.clientY);
+    });
+    window.addEventListener('mousemove', e=>{
+      if(activeId==='mouse') move(e.clientX, e.clientY);
+    });
+    window.addEventListener('mouseup', ()=>{ if(activeId==='mouse') end(); });
+  }
+
+  setupStick('leftZone','leftBase','leftKnob', (x,y)=>{ lookInput.x=x; lookInput.y=y; });
+  setupStick('rightZone','rightBase','rightKnob', (x,y)=>{ aimInput.x=x; aimInput.y=y; });
+
+  // ─────── UI elements ───────
+  const scopeOverlay = document.getElementById('scope');
+  const crosshairMin = document.getElementById('crosshairMin');
+  const breathFill = document.getElementById('breathFill');
+  const breathLabel = document.getElementById('breathLabel');
+  const flash = document.getElementById('flash');
+  const zoomSlider = document.getElementById('zoomSlider');
+  const zoomTrack = document.getElementById('zoomTrack');
+  const zoomFill = document.getElementById('zoomFill');
+  const zoomKnob = document.getElementById('zoomKnob');
+  const zoomVal = document.getElementById('zoomVal');
+  const zoomReadout = document.getElementById('zoomReadout');
+  const compassStrip = document.getElementById('compassStrip');
+
+  function toggleScope(){
+    if(cineActive) return;
+    state.isScoped = !state.isScoped;
+    scopeOverlay.classList.toggle('on', state.isScoped);
+    document.getElementById('scopeBtn').classList.toggle('active', state.isScoped);
+    crosshairMin.classList.toggle('hidden', state.isScoped);
+    zoomSlider.classList.toggle('disabled', !state.isScoped);
+    if(state.isScoped) zoomSlider.classList.add('active');
+    else { zoomSlider.classList.remove('active'); state.breathHold = 0; }
+    // Move rifle off-screen when scoped, back into view when not
+    rifleTargetPos = state.isScoped
+      ? { x: 0.18, y: -1.5, z: 0 }   // drop below screen
+      : { x: 0.18, y: -0.16, z: 0 }; // visible lower-right
+    updateCameraFov();
+  }
+  document.getElementById('scopeBtn').addEventListener('click', toggleScope);
+
+  // Zoom slider
+  let zoomDragId = null;
+  function setZoomFromY(clientY){
+    const r = zoomTrack.getBoundingClientRect();
+    let pct = 1 - (clientY - r.top) / r.height;
+    pct = Math.max(0, Math.min(1, pct));
+    state.zoom = ZOOM_MIN + pct*(ZOOM_MAX - ZOOM_MIN);
+    updateZoomUI();
+    updateCameraFov();
+  }
+  function updateZoomUI(){
+    const pct = (state.zoom - ZOOM_MIN)/(ZOOM_MAX - ZOOM_MIN);
+    zoomFill.style.height = (pct*100)+'%';
+    zoomKnob.style.bottom = (pct*100)+'%';
+    zoomVal.textContent = state.zoom.toFixed(1)+'×';
+    zoomReadout.textContent = '×'+state.zoom.toFixed(1);
+  }
+  function updateCameraFov(){
+    const fov = state.isScoped ? FOV_NORMAL / state.zoom : FOV_NORMAL;
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+  zoomSlider.addEventListener('touchstart', e=>{
+    if(zoomSlider.classList.contains('disabled')) return;
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    zoomDragId = t.identifier;
+    setZoomFromY(t.clientY);
+  }, {passive:false});
+  window.addEventListener('touchmove', e=>{
+    if(zoomDragId===null) return;
+    for(const t of e.changedTouches){
+      if(t.identifier === zoomDragId){ e.preventDefault(); setZoomFromY(t.clientY); }
+    }
+  }, {passive:false});
+  function onZoomEnd(e){
+    if(zoomDragId===null) return;
+    for(const t of e.changedTouches){
+      if(t.identifier === zoomDragId){ zoomDragId = null; }
+    }
+  }
+  window.addEventListener('touchend', onZoomEnd, {passive:false});
+  window.addEventListener('touchcancel', onZoomEnd, {passive:false});
+  zoomSlider.addEventListener('mousedown', e=>{
+    if(zoomSlider.classList.contains('disabled')) return;
+    zoomDragId = 'mouse';
+    setZoomFromY(e.clientY);
+  });
+  window.addEventListener('mousemove', e=>{ if(zoomDragId==='mouse') setZoomFromY(e.clientY); });
+  window.addEventListener('mouseup', ()=>{ if(zoomDragId==='mouse') zoomDragId=null; });
+
+  // Fire & reload — touchstart for zero-latency on mobile, click for mouse fallback
+  const fireBtn = document.getElementById('fireBtn');
+  const reloadBtn = document.getElementById('reloadBtn');
+  let _lastFire = 0;
+  function fireFromButton(e){
+    if(e) e.preventDefault();
+    const now = performance.now();
+    if(now - _lastFire < 100) return; // debounce against touchstart→click double
+    _lastFire = now;
+    fire();
+  }
+  let _lastReload = 0;
+  function reloadFromButton(e){
+    if(e) e.preventDefault();
+    const now = performance.now();
+    if(now - _lastReload < 100) return;
+    _lastReload = now;
+    startReload();
+  }
+  fireBtn.addEventListener('touchstart', fireFromButton, {passive:false});
+  fireBtn.addEventListener('click', fireFromButton);
+  reloadBtn.addEventListener('touchstart', reloadFromButton, {passive:false});
+  reloadBtn.addEventListener('click', reloadFromButton);
+
+  // ─── Desktop keyboard + mouse ───
+  const keys = Object.create(null);
+  window.addEventListener('keydown', e => {
+    if (e.repeat) return;
+    keys[e.code] = true;
+    if (e.code === 'KeyR') { e.preventDefault(); startReload(); }
+    if (e.code === 'Space') { e.preventDefault(); fire(); }
+    if (e.code === 'KeyF') { e.preventDefault(); toggleScope(); }
+  });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  // Read keyboard into lookInput each frame; reset to 0 when keys released
+  // so the joystick can take over without leftover input.
+  let _kbActive = false;
+  function readKeyboardInput(){
+    const lx = (keys['KeyD']||keys['ArrowRight']?1:0) - (keys['KeyA']||keys['ArrowLeft']?1:0);
+    const ly = (keys['KeyS']||keys['ArrowDown']?1:0)  - (keys['KeyW']||keys['ArrowUp']?1:0);
+    if (lx || ly) {
+      lookInput.x = lx; lookInput.y = ly;
+      _kbActive = true;
+    } else if (_kbActive) {
+      // released — clear so joystick (or zero) takes over
+      lookInput.x = 0; lookInput.y = 0;
+      _kbActive = false;
+    }
+  }
+
+  // Mouse-look (pointer lock for FPS feel)
+  canvas.addEventListener('click', () => {
+    if (!state.gameplayActive) return;
+    if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
+  });
+  window.addEventListener('mousemove', e => {
+    if (document.pointerLockElement === canvas) {
+      const sens = state.isScoped ? 0.0008 : 0.0025;
+      state.yaw   -= e.movementX * sens;
+      state.pitch -= e.movementY * sens;
+      const PMAX = Math.PI/2 - 0.05;
+      if (state.pitch > PMAX) state.pitch = PMAX;
+      if (state.pitch < -PMAX) state.pitch = -PMAX;
+    }
+  });
+
+  // Left-click fires when locked
+  canvas.addEventListener('mousedown', e => {
+    if (document.pointerLockElement === canvas && e.button === 0) {
+      e.preventDefault();
+      fire();
+    }
+  });
+
+  // Right-click toggles scope when locked
+  canvas.addEventListener('contextmenu', e => {
+    if (document.pointerLockElement === canvas) {
+      e.preventDefault();
+      toggleScope();
+    }
+  });
+
+  // Scroll wheel zoom
+  canvas.addEventListener('wheel', e => {
+    if (!state.gameplayActive) return;
+    e.preventDefault();
+    state.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, state.zoom - Math.sign(e.deltaY) * 0.5));
+    updateZoomUI();
+    updateCameraFov();
+  }, { passive: false });
+
+  function startReload(){
+    if(state.reloading) return;
+    if(state.ammo === state.magSize) return;
+    if(state.reserveAmmo <= 0) return;
+    state.reloading = true;
+    state.reloadStart = performance.now();
+    reloadBtn.classList.add('reloading');
+    reloadBtn.textContent = '...';
+  }
+  function finishReload(){
+    const need = state.magSize - state.ammo;
+    const give = Math.min(need, state.reserveAmmo);
+    state.ammo += give;
+    state.reserveAmmo -= give;
+    state.reloading = false;
+    reloadBtn.classList.remove('reloading');
+    reloadBtn.textContent = 'RELOAD';
+    reloadBtn.style.removeProperty('--rp');
+    updateHud();
+  }
+
+  // ─────── Raycaster for shooting ───────
+  const raycaster = new THREE.Raycaster();
+  // Reused per-shot direction vector (was allocated on every fire())
+  const _fireDir = new THREE.Vector3();
+
+  // Rebuild the cached hitables list (cache vars declared earlier)
+  function rebuildHitables(){
+    const arr = [];
+    for(const t of targets){
+      if(!t.alive) continue;
+      t.mesh.traverse(child=>{
+        if(child.isMesh){
+          child.userData.targetRef = t;
+          arr.push(child);
+        }
+      });
+    }
+    cityGroup.traverse(child=>{ if(child.isMesh && !child.userData.noShoot) arr.push(child); });
+    hitablesCache = arr;
+    hitablesDirty = false;
+  }
+
+  function fire(){
+    if(!state.gameplayActive || cineActive) return;
+    if(state.ammo<=0 || state.reloading) return;
+    state.ammo--;
+
+    // Restart CSS animations without forcing a layout (offsetWidth thrash).
+    // Removing then re-adding in the next microtask is enough on modern browsers.
+    flash.classList.remove('fire');
+    canvas.classList.remove('recoil');
+    requestAnimationFrame(() => {
+      flash.classList.add('fire');
+      canvas.classList.add('recoil');
+    });
+    // Rifle recoil
+    rifleRecoilOffset = 0.08;
+    // Haptic kick on fire
+    navigator.vibrate?.(15);
+
+    // Direction: camera forward + sway
+    const swayBase = state.isScoped ? (1 - state.breathHold) * 0.04 : 0.07;
+    const t = performance.now()/1000;
+    const swayX = (Math.sin(t*1.4) + Math.sin(t*3.1)*0.3) * swayBase;
+    const swayY = (Math.cos(t*1.1)*0.7 + Math.cos(t*2.7)*0.3) * swayBase;
+
+    // Build a normalized direction in camera space, then to world (reused vector)
+    _fireDir.set(swayX, swayY, -1).normalize().applyQuaternion(camera.quaternion);
+
+    raycaster.set(camera.position, _fireDir);
+    raycaster.far = 1000;
+
+    // Use cached hitables list — rebuilt only on changes
+    if(hitablesDirty || !hitablesCache) rebuildHitables();
+    const hitables = hitablesCache;
+
+    const hits = raycaster.intersectObjects(hitables, false);
+    if(hits.length > 0){
+      const h = hits[0];
+      const target = h.object.userData.targetRef;
+      if(target && target.alive){
+        // headshot check: did we hit the head ref?
+        let isHead = false;
+        let m = h.object;
+        while(m){
+          if(m === target.mesh.userData.headRef){ isHead = true; break; }
+          if(m === target.mesh) break;
+          m = m.parent;
+        }
+        // For drones, headshot = hit at all
+        if(target.type === 'drone') isHead = false;
+
+        target.alive = false;
+        const pts = isHead ? 250 : (target.type==='drone' ? 200 : 100);
+        state.score += pts;
+        state.kills++;
+        if(isHead){
+          state.headshots++;
+          // Confirmed headshot — distinctive haptic pattern
+          navigator.vibrate?.([20, 30, 25]);
+        }
+
+        spawnHitFx(h.point, isHead, target.type);
+        animateDeath(target, isHead);
+        showHitText(h.point, isHead ? 'HEADSHOT +250' : (target.type==='drone' ? 'DRONE +200' : '+100'),
+                    isHead ? 'var(--rust)' : 'var(--gold)');
+      } else {
+        // hit a building — show puff
+        spawnDustFx(h.point);
+      }
+    }
+    updateHud();
+  }
+
+  function animateDeath(target, isHead){
+    // Tip the body over and fall; drones drop
+    const m = target.mesh;
+    const fallSpeed = target.type==='drone' ? 8 : 2;
+    target.deathT = 0;
+    target.dying = true;
+    target.fallSpeed = fallSpeed;
+    target.tilt = isHead ? Math.PI/3 : Math.PI/6;
+    target.spin = (Math.random()-0.5) * (target.type==='drone' ? 4 : 2);
+    // Target list changed — invalidate hitables cache
+    hitablesDirty = true;
+  }
+
+  // Particle system for hits — uses shared pool/geometry.
+  // Counts dropped (was 16/10) to cut per-shot allocation cost & GPU draws.
+  const particles = [];
+  function spawnHitFx(pos, head, type){
+    const count = head ? 10 : 6;
+    const color = head ? 0xff4030 : (type==='drone' ? 0x888888 : 0xa83c2a);
+    for(let i=0;i<count;i++){
+      const p = getParticle(color);
+      p.position.copy(pos);
+      scene.add(p);
+      particles.push({
+        mesh: p,
+        vx: (Math.random()-0.5)*4,
+        vy: Math.random()*3 + 1,
+        vz: (Math.random()-0.5)*4,
+        life: 1.2,
+      });
+    }
+  }
+  function spawnDustFx(pos){
+    for(let i=0;i<4;i++){
+      const p = getParticle(0xa89968);
+      p.material.opacity = 0.8;
+      p.position.copy(pos);
+      scene.add(p);
+      particles.push({
+        mesh: p,
+        vx: (Math.random()-0.5)*2,
+        vy: Math.random()*1.5,
+        vz: (Math.random()-0.5)*2,
+        life: 0.8,
+      });
+    }
+  }
+
+  // Hit text DOM — pooled (re-used div elements). Bounded at 12 to prevent
+  // unbounded growth under sustained firing.
+  const HIT_TEXT_POOL = [];
+  const HIT_TEXT_POOL_MAX = 12;
+  // Reuse a single Vector3 for projection — avoids per-shot Vector3 allocation
+  const _hitTmpV = new THREE.Vector3();
+  function _acquireHitTextEl(){
+    for(const e of HIT_TEXT_POOL){
+      if(!e._inUse) return e;
+    }
+    if(HIT_TEXT_POOL.length < HIT_TEXT_POOL_MAX){
+      const el = document.createElement('div');
+      el.className = 'hit-text';
+      document.body.appendChild(el);
+      HIT_TEXT_POOL.push(el);
+      return el;
+    }
+    // Pool full — recycle the oldest by clearing its show state immediately
+    const el = HIT_TEXT_POOL[0];
+    el.classList.remove('show');
+    return el;
+  }
+  function showHitText(worldPos, text, color){
+    // Project worldPos to screen — reuse temp Vector3 to avoid allocation
+    _hitTmpV.copy(worldPos).project(camera);
+    if(_hitTmpV.z > 1) return;
+    const sx = (_hitTmpV.x * 0.5 + 0.5) * window.innerWidth;
+    const sy = (-_hitTmpV.y * 0.5 + 0.5) * window.innerHeight;
+    const el = _acquireHitTextEl();
+    el._inUse = true;
+    el.classList.remove('show');
+    el.style.left = sx + 'px';
+    el.style.top = sy + 'px';
+    el.style.color = color;
+    el.textContent = text;
+    // Force a frame before re-adding `.show` so the CSS animation restarts cleanly
+    requestAnimationFrame(()=>el.classList.add('show'));
+    if(el._timeout) clearTimeout(el._timeout);
+    el._timeout = setTimeout(()=>{
+      el.classList.remove('show');
+      el._inUse = false;
+    }, 1000);
+  }
+
+  // ─────── HUD updates ───────
+  function updateHud(){
+    document.getElementById('targetsLeft').textContent =
+      state.kills + '/' + targets.length;
+    document.getElementById('score').textContent = state.score;
+    const ammoLine = document.getElementById('ammoLine');
+    ammoLine.textContent = state.ammo + ' / ' + state.reserveAmmo;
+    ammoLine.classList.toggle('low', state.ammo<=2);
+    fireBtn.disabled = state.ammo<=0 || state.reloading;
+    reloadBtn.disabled = state.reloading || state.ammo===state.magSize || state.reserveAmmo<=0;
+  }
+
+  // Compass: build a strip with N/E/S/W markers
+  function buildCompass(){
+    let html = '';
+    const dirs = ['N','NE','E','SE','S','SW','W','NW','N','NE','E','SE','S','SW','W','NW','N'];
+    // 360° spans the strip — render compass labels every 45°
+    // We use a wide strip that gets translated based on yaw
+    const STRIP_PX = 360 * 4; // 4px per degree
+    compassStrip.style.width = STRIP_PX + 'px';
+    let inner = '';
+    for(let d=0;d<=360;d+=15){
+      const lbl = (d%45===0) ? dirs[Math.floor(d/45)] : '·';
+      const px = (d/360) * STRIP_PX;
+      inner += `<span style="position:absolute;left:${px}px;top:50%;transform:translate(-50%,-50%);">${lbl}</span>`;
+    }
+    compassStrip.innerHTML = inner;
+  }
+  buildCompass();
+
+  function updateCompass(){
+    // yaw: 0 = facing -Z (which we'll call North). Rotating right = +yaw = facing East.
+    let deg = (state.yaw * 180/Math.PI) % 360;
+    if(deg<0) deg += 360;
+    const STRIP_PX = 360 * 4;
+    const cw = 160; // compass width
+    // We want the marker (at center of compass) to point to our current heading
+    const offset = (deg/360) * STRIP_PX - cw/2;
+    compassStrip.style.transform = `translateX(${-offset}px)`;
+  }
+
+  // ─────── Main loop ───────
+  let lastT = performance.now();
+  let _frame = 0;
+  // FPS smoothing — accumulator over ~250ms so the readout doesn't flicker
+  const fpsEl = document.getElementById('fpsReadout');
+  let _fpsAcc = 0, _fpsCount = 0, _lastFpsUpdate = performance.now();
+  function loop(){
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastT)/1000);
+    lastT = now;
+    _frame++;
+
+    // FPS readout (smoothed, refreshed ~4×/s)
+    _fpsAcc += 1 / Math.max(0.001, dt);
+    _fpsCount++;
+    if (now - _lastFpsUpdate > 250) {
+      const fps = Math.round(_fpsAcc / _fpsCount);
+      if (fpsEl) fpsEl.textContent = fps + ' FPS · ' + DEVICE_TIER;
+      _fpsAcc = 0; _fpsCount = 0; _lastFpsUpdate = now;
+    }
+
+    // Pull keyboard input into lookInput before consuming it
+    readKeyboardInput();
+
+    // Camera control via look stick (yaw + pitch) — disabled during cinematic
+    if(!cineActive){
+      const lookSpeed = state.isScoped ? 0.8 / state.zoom : 2.0;
+      state.yaw -= lookInput.x * lookSpeed * dt;
+      state.pitch -= lookInput.y * lookSpeed * dt;
+      // Clamp pitch
+      const PMAX = Math.PI/2 - 0.05;
+      if(state.pitch > PMAX) state.pitch = PMAX;
+      if(state.pitch < -PMAX) state.pitch = -PMAX;
+
+      // Fine aim: slower
+      const fineSpeed = (state.isScoped ? 0.2 / state.zoom : 0.5);
+      state.yaw -= aimInput.x * fineSpeed * dt;
+      state.pitch -= aimInput.y * fineSpeed * dt;
+    }
+
+    // Apply to camera (Euler order YXZ)
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = state.yaw;
+    camera.rotation.x = state.pitch;
+    camera.rotation.z = 0;
+
+    // Animate rifle position smoothly toward target
+    rifleCurrentPos.x += (rifleTargetPos.x - rifleCurrentPos.x) * Math.min(1, dt * 8);
+    rifleCurrentPos.y += (rifleTargetPos.y - rifleCurrentPos.y) * Math.min(1, dt * 8);
+    rifleCurrentPos.z += (rifleTargetPos.z - rifleCurrentPos.z) * Math.min(1, dt * 8);
+    // Recoil decay
+    rifleRecoilOffset *= Math.pow(0.001, dt); // exponential decay
+    if(rifleRecoilOffset < 0.001) rifleRecoilOffset = 0;
+    // Apply: subtle bob + breathing sway when not scoped, plus recoil push back
+    const bobT = performance.now() / 1000;
+    const bobAmt = state.isScoped ? 0 : 0.004;
+    const swayAmtY = state.isScoped ? 0 : 0.003 * (1 - state.breathHold);
+    rifle.position.x = rifleCurrentPos.x + Math.sin(bobT * 1.7) * bobAmt;
+    rifle.position.y = rifleCurrentPos.y + Math.cos(bobT * 2.3) * bobAmt;
+    rifle.position.z = rifleCurrentPos.z + rifleRecoilOffset;
+    rifle.rotation.x = -rifleRecoilOffset * 0.5 + Math.sin(bobT * 1.1) * swayAmtY;
+
+    // Breath
+    const isStill = Math.abs(lookInput.x)+Math.abs(lookInput.y)<0.1
+                 && Math.abs(aimInput.x)+Math.abs(aimInput.y)<0.1;
+    if(state.isScoped && isStill){
+      state.breathHold = Math.min(1, state.breathHold + dt*0.55);
+    } else {
+      state.breathHold = Math.max(0, state.breathHold - dt*0.9);
+    }
+    if(state.breathHold > 0.7) scopeOverlay.classList.add('steady');
+    else scopeOverlay.classList.remove('steady');
+    breathFill.style.width = (state.breathHold*100)+'%';
+    breathLabel.textContent = state.breathHold > 0.7 ? 'STEADY' : 'BREATH';
+    breathLabel.classList.toggle('holding', state.breathHold > 0.7);
+
+    // Reload
+    if(state.reloading){
+      const elapsed = performance.now() - state.reloadStart;
+      const pct = Math.min(1, elapsed / state.reloadDuration);
+      reloadBtn.style.setProperty('--rp', (pct*100)+'%');
+      if(pct >= 1) finishReload();
+    }
+
+    // Targets: animate movement
+    for(const t of targets){
+      if(t.removed) continue; // fully cleaned up — skip every frame
+      if(t.dying){
+        t.deathT += dt;
+        const m = t.mesh;
+        // tilt and fall
+        if(t.type === 'drone'){
+          m.position.y -= t.fallSpeed * dt;
+          m.rotation.x += t.spin * dt;
+          m.rotation.z += t.spin * 0.7 * dt;
+          t.fallSpeed += 9.8 * dt; // gravity
+          if(m.position.y < 0){
+            m.position.y = 0;
+            // remove from scene after a beat & dispose its geometries / materials
+            if(t.deathT > 2 && !t.removed){
+              scene.remove(m);
+              disposeMesh(m);
+              t.removed = true;
+            }
+          }
+        } else {
+          // human falls flat, then ~1.5s later we yank from scene
+          if(m.rotation.x > -Math.PI/2){
+            m.rotation.x -= dt * 3;
+            if(m.rotation.x < -Math.PI/2) m.rotation.x = -Math.PI/2;
+          } else if(t.deathT > 1.8 && !t.removed){
+            // Body has settled — remove from scene to stop draw + traversal cost
+            scene.remove(m);
+            disposeMesh(m);
+            t.removed = true;
+          }
+        }
+        continue;
+      }
+      if(!t.alive) continue;
+      t.moveT += dt * t.moveSpeed;
+      const m = t.mesh;
+      if(t.moveType === 'patrol'){
+        m.position.x = t.moveBase.x + Math.sin(t.moveT) * t.moveRange;
+        m.position.z = t.moveBase.z + Math.cos(t.moveT * 0.7) * t.moveRange * 0.5;
+        m.rotation.y = Math.atan2(
+          Math.cos(t.moveT) * t.moveRange,
+          -Math.sin(t.moveT * 0.7) * t.moveRange * 0.5 * 0.7
+        );
+      } else if(t.moveType === 'fly'){
+        m.position.x = t.moveBase.x + Math.sin(t.moveT) * t.moveRange;
+        m.position.z = t.moveBase.z + Math.cos(t.moveT * 0.6) * t.moveRange;
+        m.position.y = t.moveBase.y + Math.sin(t.moveT * 1.5) * 3;
+        m.rotation.y = t.moveT * 0.5;
+        // spin rotors visually (use cached refs)
+        const rotors = m.userData.rotors;
+        if(rotors){
+          for(let i=0;i<rotors.length;i++){
+            rotors[i].rotation.z += dt * 30;
+          }
+        } else {
+          m.children.forEach(c=>{
+            if(c.geometry && c.geometry.type === 'CircleGeometry'){
+              c.rotation.z += dt * 30;
+            }
+          });
+        }
+      }
+    }
+
+    // Particles
+    for(const p of particles){
+      p.life -= dt;
+      p.vy -= 9.8 * dt;
+      p.mesh.position.x += p.vx * dt;
+      p.mesh.position.y += p.vy * dt;
+      p.mesh.position.z += p.vz * dt;
+      p.mesh.material.opacity = Math.max(0, p.life);
+    }
+    for(let i=particles.length-1;i>=0;i--){
+      if(particles[i].life <= 0){
+        releaseParticle(particles[i].mesh);
+        particles.splice(i,1);
+      }
+    }
+
+    // Throttle expensive UI updates by device tier
+    if (_frame % 2 === 0) updateCompass();
+    if (_frame % TIER.throttleLabels === 0) updateTargetLabels();
+    if (_frame % TIER.throttleMini === 0) updateMinimap();
+
+    // Drive the noir grain shader; render through the composer (post-processing).
+    noirPass.uniforms.time.value = now * 0.001;
+    composer.render();
+    requestAnimationFrame(loop);
+  }
+
+  // Initialize
+  updateHud();
+  updateZoomUI();
+  updateCameraFov();
+  setNest(0); // place camera at first nest, draw minimap
+  loop();
+
+  // ─────── Dossier population ───────
+  function populateDossier(){
+    const list = document.getElementById('dossierList');
+    list.innerHTML = '';
+    CONTRACTS.forEach((c, i) => {
+      const card = document.createElement('div');
+      card.className = 'dossier-card';
+      card.innerHTML = `
+        <div class="icon">${i+1}</div>
+        <div class="info">
+          <div class="name">${c.alias}</div>
+          <div class="real">${c.real}</div>
+          <div class="bio">${c.bio}</div>
+        </div>
+        <div class="bounty">$${c.bounty}</div>
+      `;
+      list.appendChild(card);
+    });
+  }
+
+  // ─────── Cinematic intro ───────
+  // For each contract target, smoothly aim camera at them, hold for 1.5s, show their dossier card.
+  function aimCameraAt(targetMesh, durationMs){
+    return new Promise(resolve=>{
+      const c = camera;
+      const t = targetMesh;
+      const dx = t.position.x - c.position.x;
+      const dy = (t.position.y + 1.2) - c.position.y;
+      const dz = t.position.z - c.position.z;
+      const dist = Math.sqrt(dx*dx + dz*dz);
+      const targetYaw = Math.atan2(-dx, -dz);
+      const targetPitch = Math.atan2(dy, dist);
+      const startYaw = state.yaw;
+      const startPitch = state.pitch;
+      // Shortest angular path for yaw
+      let dyaw = targetYaw - startYaw;
+      while(dyaw > Math.PI) dyaw -= Math.PI*2;
+      while(dyaw < -Math.PI) dyaw += Math.PI*2;
+
+      // also smoothly zoom in via FOV change
+      const startFov = camera.fov;
+      const targetFov = 30; // closer in for dramatic effect
+
+      const start = performance.now();
+      function step(){
+        if(cineSkipped){ resolve(); return; }
+        const t2 = (performance.now() - start) / durationMs;
+        const k = Math.min(1, t2);
+        // ease in-out
+        const e = k < 0.5 ? 2*k*k : 1 - Math.pow(-2*k+2, 2)/2;
+        state.yaw = startYaw + dyaw * e;
+        state.pitch = startPitch + (targetPitch - startPitch) * e;
+        camera.fov = startFov + (targetFov - startFov) * e;
+        camera.updateProjectionMatrix();
+        if(k < 1) requestAnimationFrame(step);
+        else resolve();
+      }
+      step();
+    });
+  }
+
+  function showCineCard(idx){
+    const c = CONTRACTS[idx];
+    document.getElementById('cineLabel').textContent = `TARGET ${idx+1} / ${CONTRACTS.length}`;
+    document.getElementById('cineName').textContent = c.alias;
+    document.getElementById('cineReal').textContent = c.real;
+    document.getElementById('cineBio').textContent = c.bio;
+    document.getElementById('cineBounty').textContent = `BOUNTY · $${c.bounty}`;
+  }
+
+  async function runCinematicIntro(){
+    if(cineActive) return;
+
+    // Honor prefers-reduced-motion: skip cinematic, jump straight to gameplay
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches){
+      cineSkipped = true;
+      cineActive = false;
+      camera.fov = FOV_NORMAL;
+      camera.updateProjectionMatrix();
+      state.pitch = 0;
+      state.yaw = 0;
+      document.getElementById('cineOverlay')?.classList.remove('show');
+      state.gameplayActive = true;
+      return;
+    }
+
+    cineActive = true;
+    cineSkipped = false;
+    document.getElementById('cineOverlay').classList.add('show');
+
+    // Find contract targets
+    const contractTargets = targets.filter(t => t.isContract);
+    for(let i=0; i<contractTargets.length && !cineSkipped; i++){
+      showCineCard(contractTargets[i].contractIdx);
+      // Slow pan to this target (~1.5s)
+      await aimCameraAt(contractTargets[i].mesh, 1500);
+      if(cineSkipped) break;
+      // Hold for ~1.5s
+      await new Promise(r=>setTimeout(r, 1500));
+    }
+
+    // Reset FOV to gameplay default
+    camera.fov = FOV_NORMAL;
+    camera.updateProjectionMatrix();
+    state.pitch = 0;
+    state.yaw = 0;
+    document.getElementById('cineOverlay').classList.remove('show');
+    cineActive = false;
+    cineSkipped = false;
+    state.gameplayActive = true;
+  }
+
+  document.getElementById('cineSkip').addEventListener('click', ()=>{
+    cineSkipped = true;
+  });
+
+  // ─────── Minimap ───────
+  miniCanvas = document.getElementById('minimapCanvas');
+  miniCtx = miniCanvas.getContext('2d');
+  // (MINI_SCALE already declared above)
+  // World -> canvas: center of canvas = origin
+  function worldToMini(wx, wz){
+    const cx = miniCanvas.width/2 + wx * MINI_SCALE;
+    // canvas Y down = world +Z toward player's "back" (we'll flip so +Z is down on map)
+    const cy = miniCanvas.height/2 + wz * MINI_SCALE;
+    return { x: cx, y: cy };
+  }
+  function miniToWorld(cx, cy){
+    return {
+      x: (cx - miniCanvas.width/2) / MINI_SCALE,
+      z: (cy - miniCanvas.height/2) / MINI_SCALE,
+    };
+  }
+
+  function updateMinimap(){
+    if(!miniCtx) return; // not yet initialized
+    const w = miniCanvas.width, h = miniCanvas.height;
+    miniCtx.clearRect(0,0,w,h);
+    // Background grid + compass
+    miniCtx.fillStyle = '#0a0d12';
+    miniCtx.fillRect(0,0,w,h);
+    // Faint grid
+    miniCtx.strokeStyle = 'rgba(212,200,150,0.08)';
+    miniCtx.lineWidth = 1;
+    for(let i=1;i<8;i++){
+      miniCtx.beginPath();
+      miniCtx.moveTo((w/8)*i, 0); miniCtx.lineTo((w/8)*i, h);
+      miniCtx.moveTo(0, (h/8)*i); miniCtx.lineTo(w, (h/8)*i);
+      miniCtx.stroke();
+    }
+    // N marker at top
+    miniCtx.fillStyle = 'rgba(212,200,150,0.5)';
+    miniCtx.font = 'bold 10px Anton, sans-serif';
+    miniCtx.textAlign = 'center';
+    miniCtx.fillText('N', w/2, 9);
+
+    // City buildings as faint rectangles (subset to keep map light)
+    miniCtx.fillStyle = 'rgba(80,80,90,0.35)';
+    for(const b of buildingPositions){
+      const p = worldToMini(b.x, b.z);
+      const sx = b.w * MINI_SCALE * 0.8;
+      const sz = b.d * MINI_SCALE * 0.8;
+      miniCtx.fillRect(p.x - sx/2, p.y - sz/2, sx, sz);
+    }
+
+    // Targets — contracts as red, others faint. Skip dead/removed.
+    for(const t of targets){
+      if(!t.alive || t.removed) continue;
+      const p = worldToMini(t.mesh.position.x, t.mesh.position.z);
+      if(t.isContract){
+        miniCtx.fillStyle = '#d94a3d';
+        miniCtx.beginPath();
+        miniCtx.arc(p.x, p.y, 3, 0, Math.PI*2);
+        miniCtx.fill();
+        // Pulsing ring
+        const pulse = 0.5 + 0.5*Math.sin(Date.now()/300);
+        miniCtx.strokeStyle = `rgba(217,74,61,${0.6 - pulse*0.4})`;
+        miniCtx.lineWidth = 1;
+        miniCtx.beginPath();
+        miniCtx.arc(p.x, p.y, 3 + pulse*4, 0, Math.PI*2);
+        miniCtx.stroke();
+      } else if(t.targetKind === 'civilian'){
+        miniCtx.fillStyle = 'rgba(106,191,125,0.7)';
+        miniCtx.fillRect(p.x-1.5, p.y-1.5, 3, 3);
+      } else if(t.targetKind === 'drone'){
+        miniCtx.fillStyle = 'rgba(158,197,232,0.6)';
+        miniCtx.fillRect(p.x-1, p.y-1, 2, 2);
+      } else {
+        miniCtx.fillStyle = 'rgba(200,176,112,0.55)';
+        miniCtx.fillRect(p.x-1.5, p.y-1.5, 3, 3);
+      }
+    }
+
+    // Nests — gold diamonds; current nest highlighted
+    NESTS.forEach((n, i)=>{
+      const p = worldToMini(n.x, n.z);
+      const isCurrent = i === currentNestIdx;
+      // Diamond shape
+      miniCtx.save();
+      miniCtx.translate(p.x, p.y);
+      miniCtx.rotate(Math.PI/4);
+      const size = isCurrent ? 6 : 5;
+      miniCtx.fillStyle = isCurrent ? '#f0b429' : '#7a6a3a';
+      miniCtx.fillRect(-size/2, -size/2, size, size);
+      miniCtx.strokeStyle = isCurrent ? '#fff5d8' : '#3a3020';
+      miniCtx.lineWidth = 1;
+      miniCtx.strokeRect(-size/2, -size/2, size, size);
+      miniCtx.restore();
+      // Nest number
+      miniCtx.fillStyle = isCurrent ? '#0a0d12' : 'rgba(212,200,150,0.7)';
+      miniCtx.font = 'bold 8px Anton, sans-serif';
+      miniCtx.textAlign = 'center';
+      miniCtx.textBaseline = 'middle';
+      miniCtx.fillText(String(i+1), p.x, p.y + 0.5);
+    });
+
+    // Current heading: small arrow at current nest pointing where camera faces
+    if(NESTS[currentNestIdx]){
+      const n = NESTS[currentNestIdx];
+      const p = worldToMini(n.x, n.z);
+      // Heading: state.yaw=0 → facing -Z (up on map)
+      const dx = -Math.sin(state.yaw);
+      const dz = -Math.cos(state.yaw);
+      const tipX = p.x + dx * 14;
+      const tipY = p.y + dz * 14;
+      miniCtx.strokeStyle = 'rgba(240,180,41,0.85)';
+      miniCtx.lineWidth = 1.5;
+      miniCtx.beginPath();
+      miniCtx.moveTo(p.x, p.y);
+      miniCtx.lineTo(tipX, tipY);
+      miniCtx.stroke();
+      // arrowhead
+      miniCtx.fillStyle = 'rgba(240,180,41,0.9)';
+      miniCtx.beginPath();
+      miniCtx.moveTo(tipX, tipY);
+      miniCtx.lineTo(tipX - dx*5 + dz*3, tipY - dz*5 - dx*3);
+      miniCtx.lineTo(tipX - dx*5 - dz*3, tipY - dz*5 + dx*3);
+      miniCtx.closePath();
+      miniCtx.fill();
+    }
+
+    // Update current nest label
+    document.getElementById('minimapCurrent').textContent = '— ' + NESTS[currentNestIdx].name + ' —';
+  }
+
+  // Tap-to-jump on minimap
+  miniCanvas.addEventListener('touchstart', e=>{
+    e.preventDefault();
+    if(cineActive) return;
+    const rect = miniCanvas.getBoundingClientRect();
+    const t = e.changedTouches[0];
+    const cx = (t.clientX - rect.left) * (miniCanvas.width / rect.width);
+    const cy = (t.clientY - rect.top) * (miniCanvas.height / rect.height);
+    pickNestAt(cx, cy);
+  }, {passive:false});
+  miniCanvas.addEventListener('mousedown', e=>{
+    if(cineActive) return;
+    const rect = miniCanvas.getBoundingClientRect();
+    const cx = (e.clientX - rect.left) * (miniCanvas.width / rect.width);
+    const cy = (e.clientY - rect.top) * (miniCanvas.height / rect.height);
+    pickNestAt(cx, cy);
+  });
+  function pickNestAt(cx, cy){
+    let best = -1, bestD = 18; // min hit radius in canvas px
+    NESTS.forEach((n, i)=>{
+      const p = worldToMini(n.x, n.z);
+      const d = Math.hypot(p.x - cx, p.y - cy);
+      if(d < bestD){ bestD = d; best = i; }
+    });
+    if(best >= 0 && best !== currentNestIdx){
+      // hide hint after first use
+      document.getElementById('minimapHint').style.display = 'none';
+      setNest(best, true);
+    }
+  }
+
+
+  labelsContainer = document.getElementById('targetLabels');
+
+  function getLabelNode(){
+    let n = labelPool.find(x=>!x._inUse);
+    if(!n){
+      n = document.createElement('div');
+      n.className = 'tgt-label';
+      n.innerHTML = '<div class="marker"></div><div class="name"></div><div class="dist"></div>';
+      labelsContainer.appendChild(n);
+      labelPool.push(n);
+    }
+    n._inUse = true;
+    n.style.display = '';
+    return n;
+  }
+  function releaseUnusedLabels(){
+    for(const n of labelPool){
+      if(!n._touched){ n.style.display = 'none'; n._inUse = false; }
+      n._touched = false;
+    }
+  }
+
+  // Reusable Vector3 for label projection — was allocated per-target per-call
+  const _labelTmpV = new THREE.Vector3();
+  // Scratch buffer for the distance-sorted candidate list when scoped
+  const _labelCandidates = [];
+  const MAX_LABELS_SCOPED = 6; // cap label count when scoped to avoid DOM blow-up
+
+  function updateTargetLabels(){
+    if(!labelsContainer) return; // not yet initialized
+    if(!state.gameplayActive) {
+      // hide all
+      labelPool.forEach(n=>{ n.style.display='none'; n._inUse=false; });
+      return;
+    }
+
+    // Build candidate list: contracts always; generics only when scoped, capped.
+    _labelCandidates.length = 0;
+    for(const t of targets){
+      if(!t.alive || t.dying || t.removed) continue;
+      const isContract = t.isContract;
+      if(!isContract && !state.isScoped) continue;
+      const dx = t.mesh.position.x - camera.position.x;
+      const dy = t.mesh.position.y - camera.position.y;
+      const dz = t.mesh.position.z - camera.position.z;
+      const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      if(dist > 250) continue;
+      _labelCandidates.push({ t, dist, isContract });
+    }
+    // When scoped, keep contracts + the 6 closest generics (was uncapped — could
+    // hit ~12 DOM labels at once, which made scoped mode noticeably heavier).
+    if(state.isScoped){
+      _labelCandidates.sort((a,b)=>{
+        // contracts first, then by ascending distance
+        if(a.isContract !== b.isContract) return a.isContract ? -1 : 1;
+        return a.dist - b.dist;
+      });
+      let kept = 0;
+      let allowed = 0;
+      const trimmed = [];
+      for(const c of _labelCandidates){
+        if(c.isContract){ trimmed.push(c); continue; }
+        if(allowed < MAX_LABELS_SCOPED){ trimmed.push(c); allowed++; }
+      }
+      _labelCandidates.length = 0;
+      for(const c of trimmed) _labelCandidates.push(c);
+    }
+
+    for(const { t, dist, isContract } of _labelCandidates){
+      _labelTmpV.set(t.mesh.position.x, t.mesh.position.y + 3.2, t.mesh.position.z);
+      _labelTmpV.project(camera);
+      if(_labelTmpV.z > 1) continue; // behind camera
+      if(_labelTmpV.x < -1.1 || _labelTmpV.x > 1.1 || _labelTmpV.y < -1.1 || _labelTmpV.y > 1.1) continue;
+
+      const sx = (_labelTmpV.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-_labelTmpV.y * 0.5 + 0.5) * window.innerHeight;
+
+      const node = getLabelNode();
+      node._touched = true;
+      const cls = isContract ? 'contract' : (t.targetKind || 'soldier');
+      node.className = 'tgt-label ' + cls;
+      node.style.left = sx + 'px';
+      node.style.top = sy + 'px';
+
+      const marker = node.children[0];
+      const name = node.children[1];
+      const distEl = node.children[2];
+
+      if(isContract){
+        marker.textContent = '◆';
+        name.textContent = t.alias;
+        distEl.textContent = Math.round(dist) + 'm · $' + t.bounty;
+      } else {
+        marker.textContent = t.targetKind === 'civilian' ? '◇' : '·';
+        name.textContent = t.kindLabel;
+        distEl.textContent = Math.round(dist) + 'm';
+      }
+    }
+    releaseUnusedLabels();
+  }
+
+
+  // Hide loading screen, populate dossier, show brief
+  setTimeout(()=>{
+    document.getElementById('loading').style.display = 'none';
+    populateDossier();
+    document.getElementById('brief').classList.add('show');
+  }, 200);
+
+  document.getElementById('startBtn').addEventListener('click', ()=>{
+    document.getElementById('brief').classList.remove('show');
+    runCinematicIntro();
+  });
+})();
+</script>
+</body>
+</html>
